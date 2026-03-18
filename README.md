@@ -118,10 +118,11 @@ teaforge pcl generate --path demo/fastapi_crud/tests --output output/pcl.html
 
 说明：
 
-- 默认按“一个测试函数一个 PCL 文件”生成
+- 默认按“一个被测试函数一个 PCL 文件”生成；同一函数相关的多个测试用例会聚合到同一个 PCL
+- PCL 中的 `file` / `method` 会优先显示被测试代码的文件与实现函数；例如 demo 会显示 `main.py` / `create_item`
 - 判定表固定预留 25 个测试用例列
 - 单个函数超过 25 个测试用例时，会自动拆分为多个 sheet 文件
-- 当输入路径下存在多个测试函数时，会按测试文件名创建子目录，并在其中输出各函数的 HTML/JSON 文件
+- 当输入路径下存在多个被测试函数时，会按被测试文件名创建子目录，并在其中输出各函数的 HTML/JSON 文件
 
 导出 PDF：
 

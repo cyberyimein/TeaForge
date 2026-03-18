@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import ast
+import re
 from collections import OrderedDict
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -23,21 +26,43 @@ KNOWN_FIXTURE_NAMES = {
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
 
+@dataclass(slots=True, frozen=True)
+class ImportedSymbol:
+    file_path: Path | None
+    original_name: str
+
+
+@dataclass(slots=True, frozen=True)
+class SubjectLocation:
+    file: str
+    method: str
+    source_path: str
+
+
+@dataclass(slots=True, frozen=True)
+class HttpRoute:
+    method: str
+    path: str
+    handler: str
+    module_path: Path
+
+
 def parse_pytest_documents(pytest_path: Path) -> list[PCLDocument]:
     files = _collect_test_files(pytest_path)
     if not files:
         raise ValueError(f"No pytest files found under: {pytest_path}")
 
-    documents: list[PCLDocument] = []
+    raw_documents: list[PCLDocument] = []
     for file_path in files:
         tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+        imports = _extract_imports(tree)
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
                 "test_"
             ):
-                documents.append(_build_document_for_function(file_path, node))
+                raw_documents.append(_build_document_for_function(file_path, node, imports))
 
-    return documents
+    return _merge_documents_by_subject(raw_documents)
 
 
 def parse_pytest_path(pytest_path: Path) -> PCLDocument:
@@ -76,11 +101,16 @@ def parse_pytest_path(pytest_path: Path) -> PCLDocument:
 def _build_document_for_function(
     file_path: Path,
     node: ast.FunctionDef | ast.AsyncFunctionDef,
+    imports: dict[str, ImportedSymbol],
 ) -> PCLDocument:
+    subject = _infer_subject_location(file_path, node, imports)
     document = PCLDocument.create(
-        file=file_path.name,
-        method=node.name,
-        source_path=_display_path(file_path),
+        file=subject.file,
+        method=subject.method,
+        source_path=subject.source_path,
+        test_file=file_path.name,
+        test_method=node.name,
+        test_source_path=_display_path(file_path),
     )
 
     for case_idx, case in enumerate(_extract_cases_from_function(node), start=1):
@@ -101,6 +131,184 @@ def _build_document_for_function(
     return document
 
 
+def _merge_documents_by_subject(documents: list[PCLDocument]) -> list[PCLDocument]:
+    grouped: OrderedDict[tuple[str, str, str], list[PCLDocument]] = OrderedDict()
+    for document in documents:
+        key = (document.file, document.method, document.source_path)
+        grouped.setdefault(key, []).append(document)
+
+    merged_documents: list[PCLDocument] = []
+    for related_documents in grouped.values():
+        if len(related_documents) == 1:
+            merged_documents.append(related_documents[0])
+            continue
+        merged_documents.append(_merge_related_documents(related_documents))
+    return merged_documents
+
+
+def _merge_related_documents(documents: list[PCLDocument]) -> PCLDocument:
+    first = documents[0]
+    merged = PCLDocument.create(
+        file=first.file,
+        method=first.method,
+        source_path=first.source_path,
+        test_file=_merge_source_labels([document.test_file for document in documents]),
+        test_method=_merge_source_labels([document.test_method for document in documents]),
+        test_source_path=_merge_source_labels([document.test_source_path for document in documents]),
+    )
+    merged.generated_at = first.generated_at
+
+    case_idx = 1
+    for document in documents:
+        for case in document.testcases:
+            merged.testcases.append(
+                PCLTestCase(
+                    testcase=case.testcase,
+                    testname=case.testname,
+                    testcasecode=f"TC-{case_idx:03d}",
+                    inputs=case.inputs,
+                    output=case.output,
+                    type=case.type,
+                    output_checks=case.output_checks,
+                    executed_date=case.executed_date,
+                    bug_number=case.bug_number,
+                )
+            )
+            case_idx += 1
+
+    merged.input_rows = _build_input_rows(merged.testcases)
+    merged.output_rows = _build_output_rows(merged.testcases)
+    return merged
+
+
+def _merge_source_labels(values: list[str]) -> str:
+    unique_values = _dedupe_preserve_order(value for value in values if value)
+    if not unique_values:
+        return ""
+    if len(unique_values) == 1:
+        return unique_values[0]
+    return f"複数 ({len(unique_values)} 件)"
+
+
+def _infer_subject_location(
+    file_path: Path,
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    imports: dict[str, ImportedSymbol],
+) -> SubjectLocation:
+    subject = _infer_direct_call_subject(node, imports)
+    if subject is not None:
+        return subject
+
+    subject = _infer_http_subject(node, imports)
+    if subject is not None:
+        return subject
+
+    return SubjectLocation(
+        file=file_path.name,
+        method=node.name,
+        source_path=_display_path(file_path),
+    )
+
+
+def _infer_direct_call_subject(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    imports: dict[str, ImportedSymbol],
+) -> SubjectLocation | None:
+    for call in _iter_calls_in_order(node):
+        if isinstance(call.func, ast.Name):
+            imported = imports.get(call.func.id)
+            if imported is None or imported.file_path is None:
+                continue
+            subject = _resolve_symbol_subject(imported.file_path, imported.original_name)
+            if subject is not None:
+                return subject
+
+        if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
+            imported = imports.get(call.func.value.id)
+            if imported is None or imported.file_path is None:
+                continue
+            subject = _resolve_symbol_subject(imported.file_path, call.func.attr)
+            if subject is not None:
+                return subject
+    return None
+
+
+def _infer_http_subject(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    imports: dict[str, ImportedSymbol],
+) -> SubjectLocation | None:
+    routes = _collect_candidate_routes(imports)
+    if not routes:
+        return None
+
+    matched_routes: list[HttpRoute] = []
+    for call in _iter_calls_in_order(node):
+        if not isinstance(call.func, ast.Attribute) or call.func.attr not in HTTP_METHODS:
+            continue
+        if not call.args:
+            continue
+        request_path = _extract_path_literal(call.args[0])
+        if not request_path:
+            continue
+        for route in routes:
+            if route.method != call.func.attr:
+                continue
+            if _route_matches(request_path, route.path):
+                matched_routes.append(route)
+                break
+
+    if not matched_routes:
+        return None
+
+    preferred_methods = _preferred_http_methods(node.name)
+    if preferred_methods:
+        for route in reversed(matched_routes):
+            if route.method in preferred_methods:
+                return _subject_from_route(route)
+
+    return _subject_from_route(matched_routes[-1])
+
+
+def _subject_from_route(route: HttpRoute) -> SubjectLocation:
+    return SubjectLocation(
+        file=route.module_path.name,
+        method=route.handler,
+        source_path=_display_path(route.module_path),
+    )
+
+
+def _preferred_http_methods(test_name: str) -> set[str]:
+    lowered = test_name.lower()
+    if "create_" in lowered:
+        return {"post"}
+    if "update_" in lowered:
+        return {"put", "patch"}
+    if "delete_" in lowered:
+        return {"delete"}
+    if "get_" in lowered or "read_" in lowered or "list_" in lowered:
+        return {"get"}
+    return set()
+
+
+def _collect_candidate_routes(imports: dict[str, ImportedSymbol]) -> list[HttpRoute]:
+    routes: list[HttpRoute] = []
+    seen_modules: set[Path] = set()
+    for imported in imports.values():
+        if imported.file_path is None or imported.file_path in seen_modules:
+            continue
+        seen_modules.add(imported.file_path)
+        routes.extend(_collect_http_routes(imported.file_path))
+    return routes
+
+
+def _iter_calls_in_order(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.Call]:
+    calls = [child for child in ast.walk(node) if isinstance(child, ast.Call)]
+    calls.sort(key=lambda child: (getattr(child, "lineno", 0), getattr(child, "col_offset", 0)))
+    return calls
+
+
 def _collect_test_files(path: Path) -> list[Path]:
     if path.is_file():
         return [path] if _is_test_file(path) else []
@@ -110,6 +318,139 @@ def _collect_test_files(path: Path) -> list[Path]:
 def _is_test_file(path: Path) -> bool:
     name = path.name
     return name.startswith("test_") or name.endswith("_test.py")
+
+
+def _extract_imports(tree: ast.Module) -> dict[str, ImportedSymbol]:
+    imports: dict[str, ImportedSymbol] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                bind_name = alias.asname or alias.name.split(".")[0]
+                imports[bind_name] = ImportedSymbol(
+                    file_path=_resolve_module_path(alias.name),
+                    original_name=alias.name.rsplit(".", 1)[-1],
+                )
+        if isinstance(node, ast.ImportFrom):
+            module_name = node.module or ""
+            module_path = _resolve_module_path(module_name) if module_name else None
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                bind_name = alias.asname or alias.name
+                symbol_module_name = f"{module_name}.{alias.name}" if module_name else alias.name
+                file_path = _resolve_module_path(symbol_module_name) or module_path
+                imports[bind_name] = ImportedSymbol(
+                    file_path=file_path,
+                    original_name=alias.name,
+                )
+    return imports
+
+
+@lru_cache(maxsize=None)
+def _resolve_module_path(module_name: str) -> Path | None:
+    if not module_name:
+        return None
+    base_path = Path.cwd() / Path(*module_name.split("."))
+    module_file = base_path.with_suffix(".py")
+    if module_file.exists():
+        return module_file
+    package_init = base_path / "__init__.py"
+    if package_init.exists():
+        return package_init
+    return None
+
+
+def _resolve_symbol_subject(module_path: Path, symbol_name: str) -> SubjectLocation | None:
+    if not _module_defines_symbol(module_path, symbol_name):
+        return None
+    return SubjectLocation(
+        file=module_path.name,
+        method=symbol_name,
+        source_path=_display_path(module_path),
+    )
+
+
+@lru_cache(maxsize=None)
+def _module_defines_symbol(module_path: Path, symbol_name: str) -> bool:
+    if module_path.suffix != ".py" or not module_path.exists():
+        return False
+    tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == symbol_name:
+            return True
+    return False
+
+
+@lru_cache(maxsize=None)
+def _collect_http_routes(module_path: Path) -> tuple[HttpRoute, ...]:
+    if module_path.suffix != ".py" or not module_path.exists():
+        return ()
+    tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
+    routes: list[HttpRoute] = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for decorator in node.decorator_list:
+            route = _parse_http_route(module_path, decorator, node.name)
+            if route is not None:
+                routes.append(route)
+    return tuple(routes)
+
+
+def _parse_http_route(
+    module_path: Path,
+    decorator: ast.expr,
+    handler_name: str,
+) -> HttpRoute | None:
+    if not isinstance(decorator, ast.Call):
+        return None
+    if not isinstance(decorator.func, ast.Attribute):
+        return None
+    if decorator.func.attr not in HTTP_METHODS or not decorator.args:
+        return None
+    route_path = _extract_path_literal(decorator.args[0])
+    if not route_path:
+        return None
+    return HttpRoute(
+        method=decorator.func.attr,
+        path=route_path,
+        handler=handler_name,
+        module_path=module_path,
+    )
+
+
+def _extract_path_literal(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                parts.append(value.value)
+            else:
+                parts.append("{param}")
+        return "".join(parts)
+    return None
+
+
+def _route_matches(request_path: str, route_path: str) -> bool:
+    if request_path == route_path:
+        return True
+    return re.fullmatch(_route_pattern(route_path), request_path) is not None
+
+
+def _route_pattern(route_path: str) -> str:
+    if route_path == "/":
+        return r"/"
+    segments = route_path.strip("/").split("/")
+    pattern_segments: list[str] = []
+    for segment in segments:
+        if segment.startswith("{") and segment.endswith("}"):
+            pattern_segments.append(r"[^/]+")
+        else:
+            pattern_segments.append(re.escape(segment))
+    prefix = "/" if route_path.startswith("/") else ""
+    return f"{prefix}{'/'.join(pattern_segments)}"
 
 
 def _extract_cases_from_function(

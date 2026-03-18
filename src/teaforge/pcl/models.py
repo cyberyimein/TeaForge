@@ -32,6 +32,9 @@ class PCLDocument:
     file: str
     method: str
     source_path: str
+    test_file: str
+    test_method: str
+    test_source_path: str
     generated_at: str
     sheet_number: int = 1
     sheet_count: int = 1
@@ -40,12 +43,24 @@ class PCLDocument:
     output_rows: list[PCLMatrixRow] = field(default_factory=list)
 
     @classmethod
-    def create(cls, file: str, method: str, source_path: str) -> "PCLDocument":
+    def create(
+        cls,
+        file: str,
+        method: str,
+        source_path: str,
+        *,
+        test_file: str | None = None,
+        test_method: str | None = None,
+        test_source_path: str | None = None,
+    ) -> "PCLDocument":
         return cls(
             title="プログラムチェックリスト",
             file=file,
             method=method,
             source_path=source_path,
+            test_file=test_file or file,
+            test_method=test_method or method,
+            test_source_path=test_source_path or source_path,
             generated_at=datetime.now(UTC).isoformat(),
             sheet_number=1,
             sheet_count=1,
@@ -61,6 +76,9 @@ class PCLDocument:
             file=payload["file"],
             method=payload["method"],
             source_path=payload["source_path"],
+            test_file=payload.get("test_file", payload["file"]),
+            test_method=payload.get("test_method", payload["method"]),
+            test_source_path=payload.get("test_source_path", payload["source_path"]),
             generated_at=payload["generated_at"],
             sheet_number=payload.get("sheet_number", 1),
             sheet_count=payload.get("sheet_count", 1),
