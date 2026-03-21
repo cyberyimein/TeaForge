@@ -1,32 +1,34 @@
 # TeaForge
 
-TeaForge 用于把自动化测试转换为日本式单元测试说明文档（PCL, Program Check List），并生成带 Mermaid 流程图的覆盖率报告。
+TeaForge converts automated tests into Japanese-style unit test documentation (PCL, Program Check List) and generates coverage reports with Mermaid flowcharts.
 
-当前已实现：
+This project is not just a command-line tool for manual human use. Its primary use case is collaboration with AI agents. The `skill/SKILL.md` file provides agents with TeaForge knowledge such as capabilities, CLI interfaces, usage boundaries, and flowchart generation rules. Agents such as GitHub Copilot and Claude Code can load that skill to learn when TeaForge should be called, which arguments should be passed, and how to correct a failed invocation. That makes test generation, documentation generation, and coverage reporting more reliable.
 
-- `pytest` 测试解析
-- `jest` / `TypeScript` 测试解析
-- 生成 PCL `JSON + HTML`
-- 将 HTML 导出为 PDF（`WeasyPrint`）
-- 通过 CLI 查询单个测试用例说明
-- 生成文件级、多页的覆盖率报告（C0 / C1 + Mermaid SVG）
+Currently implemented:
 
-## 目录结构
+- `pytest` test parsing
+- `jest` / `TypeScript` test parsing
+- PCL generation as `JSON + HTML`
+- HTML export to PDF (`WeasyPrint`)
+- CLI lookup for individual testcase descriptions
+- File-level multi-page coverage reports (C0 / C1 + Mermaid SVG)
+
+## Directory Structure
 
 ```text
 TeaForge/
-  src/teaforge/            # 核心实现与 CLI
-  templates/               # PCL HTML 模板
-  demo/fastapi_crud/       # 内部 FastAPI + SQLite + pytest 示例
-  tests/fixtures/jest_sample/ # Jest / TypeScript 最小 fixture
-  output/                  # 本地生成的 HTML / JSON / PDF 输出目录
-  tests/                   # TeaForge 自身测试
-  skill/                   # skill 文件
-  project.md               # 项目目标说明
-  Step1.md                 # 第一阶段需求
+  src/teaforge/            # Core implementation and CLI
+  templates/               # PCL HTML templates
+  demo/fastapi_crud/       # Internal FastAPI + SQLite + pytest demo
+  tests/fixtures/jest_sample/ # Minimal Jest / TypeScript fixture
+  output/                  # Local HTML / JSON / PDF output directory
+  tests/                   # TeaForge's own test suite
+  skill/                   # Skill file
+  project.md               # Project goal description
+  Step1.md                 # Phase 1 requirements
 ```
 
-## 安装
+## Installation
 
 ### macOS / Linux
 
@@ -44,76 +46,76 @@ py -m venv .venv
 pip install -e ".[dev,pdf]"
 ```
 
-## Node / Jest 前置条件
+## Node / Jest Prerequisites
 
-如果你要使用 `jest` / `TypeScript` 的 PCL 或覆盖率功能，还需要本地 Node.js 环境。
+If you want to use the `jest` / `TypeScript` PCL or coverage features, you also need a local Node.js environment.
 
-### 必需工具
+### Required Tools
 
 - `node`
 - `npx`
-- 项目内可执行的 `jest`
+- A project-local `jest` executable
 
-### 覆盖率相关
+### Coverage Requirements
 
-`teaforge coverage generate --framework jest` 依赖 Jest 输出 Istanbul `coverage-final.json`。
+`teaforge coverage generate --framework jest` depends on Jest producing Istanbul `coverage-final.json`.
 
-TeaForge 当前会调用：
+TeaForge currently invokes:
 
 ```bash
 npx jest --coverage --coverageReporters=json --coverageDirectory <temp-dir> --runInBand <test-path>
 ```
 
-### Mermaid 相关
+### Mermaid Requirements
 
-无论是 `pytest` 还是 `jest` 覆盖率报告，只要要插入流程图，都仍然依赖本地 `mmdc`：
+Whether you generate coverage reports from `pytest` or `jest`, Mermaid flowcharts still require a local `mmdc` installation:
 
 ```bash
 npm install -g @mermaid-js/mermaid-cli
 ```
 
-## PDF 导出依赖（WeasyPrint）
+## PDF Export Dependencies (WeasyPrint)
 
-TeaForge 的 HTML 生成功能只依赖 Python 包；PDF 导出额外依赖 WeasyPrint 的系统库。  
-如果 `teaforge export` 报缺少 `libgobject`、`Pango`、`Cairo` 或 DLL/动态库找不到，请按对应系统补装。
+TeaForge HTML generation only depends on Python packages. PDF export additionally depends on WeasyPrint system libraries.  
+If `teaforge export` reports missing `libgobject`, `Pango`, `Cairo`, or missing DLL / shared libraries, install the required packages for your platform.
 
 ### macOS
 
-参考 WeasyPrint 官方文档，最简单的方式是先通过 Homebrew 安装 WeasyPrint 及其依赖：
+According to the official WeasyPrint documentation, the simplest approach is to install WeasyPrint and its dependencies with Homebrew first:
 
 ```bash
 brew install weasyprint
 ```
 
-如果你仍然使用项目自己的虚拟环境来运行 TeaForge，保留下面这步即可：
+If you still run TeaForge inside the project's virtual environment, keep this step as well:
 
 ```bash
 source .venv/bin/activate
 pip install -e ".[dev,pdf]"
 ```
 
-如果仍提示找不到动态库，可设置：
+If shared libraries are still missing, you can set:
 
 ```bash
 export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib:$DYLD_FALLBACK_LIBRARY_PATH"
 ```
 
-Apple Silicon 默认前缀通常是 `/opt/homebrew`，Intel Mac 常见前缀是 `/usr/local`。
+The default prefix is usually `/opt/homebrew` on Apple Silicon and `/usr/local` on Intel Macs.
 
 ### Windows
 
-TeaForge 很可能运行在 Windows 环境，PDF 导出时需要提前安装 Pango 及其依赖。  
-根据 WeasyPrint 官方文档，推荐流程如下：
+TeaForge may also run on Windows. For PDF export you need to install Pango and its dependencies in advance.  
+Based on the official WeasyPrint documentation, the recommended flow is:
 
-1. 安装 Python。
-2. 安装 [MSYS2](https://www.msys2.org/)。
-3. 在 MSYS2 shell 中执行：
+1. Install Python.
+2. Install [MSYS2](https://www.msys2.org/).
+3. Run this in the MSYS2 shell:
 
 ```bash
 pacman -S mingw-w64-x86_64-pango
 ```
 
-4. 回到 PowerShell 或 `cmd`，安装项目：
+4. Go back to PowerShell or `cmd` and install the project:
 
 ```powershell
 py -m venv .venv
@@ -121,46 +123,54 @@ py -m venv .venv
 pip install -e ".[dev,pdf]"
 ```
 
-如果仍提示找不到 DLL，可在当前终端设置：
+If DLLs are still missing, set this in the current terminal:
 
 ```powershell
 $env:WEASYPRINT_DLL_DIRECTORIES="C:\msys64\mingw64\bin"
 ```
 
-在 `cmd.exe` 中对应写法为：
+The equivalent in `cmd.exe` is:
 
 ```cmd
 set WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin
 ```
 
-### 导出命令示例
+### Export Command Example
 
 ```bash
 teaforge export --path output/test_items/demo-pcl-test-create-item-normal.html --output output/test_items/demo-pcl-test-create-item-normal.pdf
 ```
 
-## CLI 用法
+## CLI Usage
 
-TeaForge 当前的测试框架入口是通过 `--framework` 选择：
+TeaForge's primary CLI user is an agent, not a human terminal user. That means the design goal is not “what is the shortest command a human can type”, but rather:
 
-- `pytest`：默认值
-- `jest`：用于 Node.js / TypeScript Jest 测试
+- Can the agent understand parameters and constraints from `help` output?
+- Can the agent get a clear correction path from failure messages?
+- Can the agent chain together the PCL / coverage / Mermaid workflows automatically?
 
-生成 PCL：
+For that reason, TeaForge CLI tries to provide readable help, explicit error messages, and actionable correction hints when dependencies or inputs are missing. That feedback is meant to be consumed by agents so they can retry with corrected parameters.
+
+TeaForge currently selects the test framework through `--framework`:
+
+- `pytest`: default
+- `jest`: for Node.js / TypeScript Jest tests
+
+Generate PCL:
 
 ```bash
 teaforge pcl generate --path demo/fastapi_crud/tests --output output/pcl.html
 ```
 
-说明：
+Notes:
 
-- 默认按“一个被测试函数一个 PCL 文件”生成；同一函数相关的多个测试用例会聚合到同一个 PCL
-- PCL 中的 `file` / `method` 会优先显示被测试代码的文件与实现函数；例如 demo 会显示 `main.py` / `create_item`
-- 判定表固定预留 25 个测试用例列
-- 单个函数超过 25 个测试用例时，会自动拆分为多个 sheet 文件
-- 当输入路径下存在多个被测试函数时，会按被测试文件名创建子目录，并在其中输出各函数的 HTML/JSON 文件
+- By default, TeaForge generates one PCL file per tested function. Multiple testcases targeting the same function are merged into the same PCL.
+- In the generated PCL, `file` and `method` prefer the actual tested source file and implementation function. In the demo this becomes `main.py` / `create_item`.
+- The matrix always reserves 25 testcase columns.
+- If one function has more than 25 testcases, TeaForge automatically splits them into multiple sheet files.
+- If the input path contains multiple tested functions, TeaForge creates subdirectories by tested file name and writes each function's HTML/JSON there.
 
-生成 Jest / TypeScript PCL：
+Generate Jest / TypeScript PCL:
 
 ```bash
 teaforge pcl generate \
@@ -169,52 +179,53 @@ teaforge pcl generate \
   --output output/jest-pcl.html
 ```
 
-Jest 目前支持的主要语法范围：
+Main Jest syntax currently supported:
 
 - `test(...)`
 - `it(...)`
 - `test.only(...)` / `it.only(...)`
 - `test.each([...])(...)`
-- 相对路径 `import`
-- 直接导入函数调用
+- Relative-path `import`
+- Direct imported function calls
 - `expect(...).toBe(...)`
 - `expect(...).toEqual(...)`
 - `expect(...).toStrictEqual(...)`
 - `expect(...).toContain(...)`
 - `expect(() => fn(...)).toThrow(...)`
 
-Jest 当前的已知边界：
+Current Jest limitations:
 
-- 优先支持 `TypeScript` / `JavaScript` 的相对路径 import
-- `test.each` 当前支持数组字面量行数据
-- 还没有覆盖所有 Jest / ts-jest / Babel 变体语法
-- 还没有提供完整的 Node.js demo 项目，目前主要通过 `tests/fixtures/jest_sample` 验证
+- Relative `TypeScript` / `JavaScript` imports are the primary supported path.
+- `test.each` currently supports array-literal row data.
+- Not all Jest / ts-jest / Babel syntax variants are covered yet.
+- There is not yet a full Node.js demo project. Validation currently relies mainly on `tests/fixtures/jest_sample`.
 
-导出 PDF：
+Export PDF:
 
 ```bash
 teaforge export --path output/pcl.html --output output/pcl.pdf
 ```
 
-查询测试用例：
+Query a testcase:
 
 ```bash
 teaforge get --path output/pcl.html --testcase TC-001
 ```
 
-说明：
+Notes:
 
-- `generate` 会同时为每个 HTML 生成同名 `.json`
-- `get` 会优先读 JSON；若传入 HTML 且存在内嵌数据，也能直接读取
+- `generate` also writes a sibling `.json` file for each HTML file.
+- `get` prefers JSON. If you pass HTML with embedded data, it can read that directly as well.
+- Agents can read command descriptions with `teaforge help`, `teaforge help pcl generate`, and `teaforge help coverage generate`, then adjust parameters based on error feedback.
 
-验证 Mermaid：
+Validate Mermaid:
 
 ```bash
 teaforge mermaid validate --code "flowchart TD
   A[Start] --> B[End]"
 ```
 
-生成函数级 Mermaid 文件：
+Generate a function-level Mermaid file:
 
 ```bash
 teaforge mermaid generate \
@@ -226,7 +237,7 @@ teaforge mermaid generate \
   --output-dir output/files
 ```
 
-生成覆盖率报告：
+Generate a coverage report:
 
 ```bash
 teaforge coverage generate \
@@ -237,7 +248,7 @@ teaforge coverage generate \
   --diagram-dir output/files
 ```
 
-生成 Jest / TypeScript 覆盖率报告：
+Generate a Jest / TypeScript coverage report:
 
 ```bash
 teaforge coverage generate \
@@ -248,14 +259,15 @@ teaforge coverage generate \
   --diagram-dir output/files
 ```
 
-说明：
+Notes:
 
-- 覆盖率报告按“被测文件”输出一份 HTML；摘要页覆盖全部函数，只有你通过 `--function` 指定的业务函数才会生成流程图详情页
-- 不需要为 `_db_path` 之类的简单辅助函数绘制流程图；优先选择真正有业务价值、存在条件分支或错误路径的函数
-- 被指定的业务函数需要先准备对应的 Mermaid `.mmd` 文件；若缺失，CLI 会提示先调用 `teaforge mermaid generate`
-- Mermaid 内容应尽量画出 `if/else`、校验失败、异常返回、主要业务分支，而不是只画“开始 -> 调用函数 -> 结束”
-- `teaforge mermaid validate` / `teaforge mermaid generate` 会使用本地 `mmdc` 做真实语法校验；若缺失会直接提示安装命令
-- 生成报告时会把 Mermaid 渲染为 SVG，并以自包含图片的方式嵌入 HTML，避免编辑器把 Mermaid 生成的原始 SVG 样式误判为页面 CSS 错误
-- Mermaid 转 SVG 依赖本地 `mmdc`，可通过 `npm install -g @mermaid-js/mermaid-cli` 安装
-- `jest` 覆盖率当前读取 Istanbul `coverage-final.json`，并要求测试文件能被可靠映射到真实业务 source file；无法证明 source 时会直接失败
-- `jest` source function 解析当前覆盖：顶层 function、arrow function、class method
+- Coverage reports are generated per tested source file. The summary page includes all functions, but only functions specified with `--function` get dedicated flowchart pages.
+- You do not need flowcharts for simple helper functions such as `_db_path`. Prefer real business functions with conditions or error paths.
+- Requested business functions must already have Mermaid `.mmd` files prepared. If they are missing, the CLI tells you to call `teaforge mermaid generate` first.
+- Mermaid content should show `if/else`, validation failure, exception return paths, and major business branches. Do not generate meaningless “start -> call function -> end” diagrams.
+- `teaforge mermaid validate` and `teaforge mermaid generate` use local `mmdc` for real syntax validation. If it is missing, TeaForge prints the installation hint directly.
+- When generating reports, TeaForge renders Mermaid to SVG and embeds it as a self-contained image in HTML. This avoids editor-side confusion where raw Mermaid SVG styles may be mistaken for page CSS errors.
+- Mermaid-to-SVG conversion depends on local `mmdc`, which you can install with `npm install -g @mermaid-js/mermaid-cli`.
+- `jest` coverage currently reads Istanbul `coverage-final.json` and requires the test file to be mapped to a real business source file. If TeaForge cannot prove the source, it fails fast.
+- `jest` source function parsing currently covers top-level functions, arrow functions, and class methods.
+- When a command fails, TeaForge tries to return actionable correction hints, such as missing `mmdc`, missing Mermaid files, unresolved source files, or an invalid framework parameter. Those messages are expected to be read by an agent and used to correct the next invocation.
