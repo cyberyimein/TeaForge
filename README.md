@@ -8,6 +8,7 @@ Step1 当前支持：
 - 生成 PCL `JSON + HTML`
 - 将 HTML 导出为 PDF（`WeasyPrint`）
 - 通过 CLI 查询单个测试用例说明
+- 生成文件级、多页的覆盖率报告（C0 / C1 + Mermaid SVG）
 
 ## 目录结构
 
@@ -140,3 +141,43 @@ teaforge get --path output/pcl.html --testcase TC-001
 
 - `generate` 会同时为每个 HTML 生成同名 `.json`
 - `get` 会优先读 JSON；若传入 HTML 且存在内嵌数据，也能直接读取
+
+验证 Mermaid：
+
+```bash
+teaforge mermaid validate --code "flowchart TD
+  A[Start] --> B[End]"
+```
+
+生成函数级 Mermaid 文件：
+
+```bash
+teaforge mermaid generate \
+  --source demo/fastapi_crud/app/main.py \
+  --function create_item \
+  --code "flowchart TD
+    A[Start] --> B[Create item]
+    B --> C[Return response]" \
+  --output-dir output/files
+```
+
+生成覆盖率报告：
+
+```bash
+teaforge coverage generate \
+  --path demo/fastapi_crud/tests \
+  --output output/main_coverage_report.html \
+  --function create_item \
+  --function update_item \
+  --diagram-dir output/files
+```
+
+说明：
+
+- 覆盖率报告按“被测文件”输出一份 HTML；摘要页覆盖全部函数，只有你通过 `--function` 指定的业务函数才会生成流程图详情页
+- 不需要为 `_db_path` 之类的简单辅助函数绘制流程图；优先选择真正有业务价值、存在条件分支或错误路径的函数
+- 被指定的业务函数需要先准备对应的 Mermaid `.mmd` 文件；若缺失，CLI 会提示先调用 `teaforge mermaid generate`
+- Mermaid 内容应尽量画出 `if/else`、校验失败、异常返回、主要业务分支，而不是只画“开始 -> 调用函数 -> 结束”
+- `teaforge mermaid validate` / `teaforge mermaid generate` 会使用本地 `mmdc` 做真实语法校验；若缺失会直接提示安装命令
+- 生成报告时会把 Mermaid 渲染为 SVG，并以自包含图片的方式嵌入 HTML，避免编辑器把 Mermaid 生成的原始 SVG 样式误判为页面 CSS 错误
+- Mermaid 转 SVG 依赖本地 `mmdc`，可通过 `npm install -g @mermaid-js/mermaid-cli` 安装

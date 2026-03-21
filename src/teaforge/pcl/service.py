@@ -6,6 +6,8 @@ from dataclasses import replace
 from math import ceil
 from pathlib import Path
 
+from teaforge.naming import folder_name, slugify
+
 from .models import PCLDocument, PCLMatrixRow
 from .parser import parse_pytest_documents
 from .render import render_pcl_html
@@ -135,12 +137,12 @@ def _resolve_output_paths(
         json_path.parent.mkdir(parents=True, exist_ok=True)
         return html_path, json_path
 
-    output_dir = base_html.parent / _folder_name(Path(document.file).stem)
+    output_dir = base_html.parent / folder_name(Path(document.file).stem)
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = _build_output_suffix(document)
     html_path = output_dir / f"{base_html.stem}-{suffix}{base_html.suffix}"
     if base_json is not None:
-        json_dir = base_json.parent / _folder_name(Path(document.file).stem)
+        json_dir = base_json.parent / folder_name(Path(document.file).stem)
         json_dir.mkdir(parents=True, exist_ok=True)
         json_path = json_dir / f"{base_json.stem}-{suffix}{base_json.suffix}"
     else:
@@ -149,20 +151,10 @@ def _resolve_output_paths(
 
 
 def _build_output_suffix(document: PCLDocument) -> str:
-    method_slug = _slugify(document.method)
+    method_slug = slugify(document.method)
     if document.sheet_count > 1:
         return f"{method_slug}-sheet-{document.sheet_number:02d}"
     return method_slug
-
-
-def _slugify(value: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value).strip("-").lower()
-    return slug or "pcl"
-
-
-def _folder_name(value: str) -> str:
-    name = re.sub(r"[^a-zA-Z0-9_]+", "_", value).strip("_").lower()
-    return name or "pcl"
 
 
 def _extract_embedded_json(html_content: str) -> dict:

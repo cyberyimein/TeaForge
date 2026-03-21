@@ -35,3 +35,25 @@ def test_generate_and_get_commands(tmp_path):
     )
     assert get_result.exit_code == 0
     assert "テストケース番号: TC-001" in get_result.stdout
+
+
+def test_get_command_reads_embedded_html_without_sibling_json(tmp_path):
+    html_path = tmp_path / "pcl.html"
+    source = Path("tests/fixtures/test_sample_pytest.py")
+
+    result = runner.invoke(
+        app,
+        ["pcl", "generate", "--path", str(source), "--output", str(html_path)],
+    )
+    assert result.exit_code == 0
+
+    generated_html = tmp_path / "test_sample_pytest" / "pcl-test-create-user-normal.html"
+    generated_json = generated_html.with_suffix(".json")
+    generated_json.unlink()
+
+    get_result = runner.invoke(
+        app,
+        ["get", "--path", str(generated_html), "--testcase", "TC-001"],
+    )
+    assert get_result.exit_code == 0
+    assert "テストケース番号: TC-001" in get_result.stdout
