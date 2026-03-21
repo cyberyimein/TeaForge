@@ -1,8 +1,12 @@
+"""Expose TeaForge workflows as a small CLI surface over the service layer."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
+import click
 import typer
+from typer.main import get_command as get_typer_command
 
 from teaforge.coverage.mermaid import save_mermaid_diagram, validate_mermaid_with_renderer
 from teaforge.coverage.service import generate_coverage_reports
@@ -16,6 +20,24 @@ coverage_app = typer.Typer(help="Coverage report commands")
 app.add_typer(pcl_app, name="pcl")
 app.add_typer(mermaid_app, name="mermaid")
 app.add_typer(coverage_app, name="coverage")
+
+
+@app.command("help")
+def help_command(
+    command_path: list[str] | None = typer.Argument(
+        None,
+        help="Optional command path such as 'pcl generate' or 'coverage generate'.",
+    ),
+) -> None:
+    """Show help text for the CLI root or a nested command path."""
+    try:
+        command, info_name = _resolve_help_target(command_path or [])
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    context = click.Context(command, info_name=info_name)
+    typer.echo(command.get_help(context))
 
 
 @pcl_app.command("generate")
@@ -162,6 +184,29 @@ def coverage_generate(
         raise typer.Exit(code=1) from exc
     for html_path in generated_files:
         typer.echo(f"Generated coverage HTML: {html_path}")
+
+
+def _resolve_help_target(command_path: list[str]) -> tuple[click.Command, str]:
+    """Resolve a nested command path into the Click command that owns its help text."""
+    command: click.Command = get_typer_command(app)
+    resolved_path: list[str] = []
+    for part in command_path:
+        if not isinstance(command, click.Group):
+            current_path = " ".join(resolved_path) or "teaforge"
+            raise ValueError(f"Command path '{current_path}' does not accept subcommands.")
+
+        next_command = command.commands.get(part)
+        if next_command is None:
+            requested_path = " ".join([*resolved_path, part])
+            raise ValueError(f"Unknown command path: {requested_path}")
+
+        command = next_command
+        resolved_path.append(part)
+
+    info_name = "teaforge"
+    if resolved_path:
+        info_name += " " + " ".join(resolved_path)
+    return command, info_name
 
 
 if __name__ == "__main__":

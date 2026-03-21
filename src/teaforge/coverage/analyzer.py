@@ -1,3 +1,5 @@
+"""Extract coverage.py data for the source files proven to be under test."""
+
 from __future__ import annotations
 
 import ast
@@ -33,7 +35,16 @@ class SourceCoverageSnapshot:
 
 
 def discover_source_files(pytest_path: Path) -> list[Path]:
+    """Return only source files that were resolved away from the pytest files."""
     documents = parse_pytest_documents(pytest_path)
+    unresolved_documents = [document for document in documents if _document_uses_test_file_as_source(document)]
+    if unresolved_documents:
+        unresolved_tests = ", ".join(sorted(document.test_method for document in unresolved_documents))
+        raise ValueError(
+            "Could not determine the tested source file for: "
+            f"{unresolved_tests}. Coverage reports require a resolvable production source target."
+        )
+
     source_paths = sorted(
         {Path(document.source_path).resolve() for document in documents if document.source_path},
         key=lambda path: str(path),
@@ -44,6 +55,7 @@ def discover_source_files(pytest_path: Path) -> list[Path]:
 
 
 def parse_source_functions(source_path: Path) -> list[SourceFunction]:
+    """Collect top-level functions and class methods from a source file."""
     source = source_path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(source_path))
     functions: list[SourceFunction] = []
@@ -70,6 +82,7 @@ def parse_source_functions(source_path: Path) -> list[SourceFunction]:
 
 
 def analyze_coverage(pytest_path: Path, source_paths: list[Path]) -> dict[Path, SourceCoverageSnapshot]:
+    """Run pytest through coverage.py and map the JSON payload back to each source file."""
     _ensure_runtime_dependencies()
 
     resolved_pytest_path = pytest_path.resolve()
@@ -130,6 +143,7 @@ def analyze_coverage(pytest_path: Path, source_paths: list[Path]) -> dict[Path, 
 
 
 def _ensure_runtime_dependencies() -> None:
+    """Check that runtime tools needed for coverage execution are importable."""
     if importlib.util.find_spec("coverage") is None:
         raise RuntimeError(
             "coverage.py is required for coverage reports. Install it with: pip install coverage"
@@ -144,6 +158,8 @@ def _extract_snapshots(
     payload: dict,
     source_paths: list[Path],
 ) -> dict[Path, SourceCoverageSnapshot]:
+    """Convert coverage.json payloads into per-source snapshot dataclasses."""
+    # coverage.py may emit relative paths; resolving them once keeps matching deterministic.
     file_entries = {
         Path(file_name).resolve(): file_payload
         for file_name, file_payload in payload.get("files", {}).items()
@@ -176,11 +192,17 @@ def _extract_snapshots(
 
 
 def _match_file_payload(file_entries: dict[Path, dict], source_path: Path) -> dict:
+    """Find the exact coverage payload for one resolved source file."""
     if source_path in file_entries:
         return file_entries[source_path]
 
-    by_name = [payload for path, payload in file_entries.items() if path.name == source_path.name]
-    if len(by_name) == 1:
-        return by_name[0]
-
     raise ValueError(f"coverage.py did not emit data for source file: {source_path}")
+
+
+def _document_uses_test_file_as_source(document) -> bool:
+    """Detect parser fallbacks where the test file could not be resolved to production code."""
+    return (
+        document.source_path == document.test_source_path
+        and document.file == document.test_file
+        and document.method == document.test_method
+    )

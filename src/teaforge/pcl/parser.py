@@ -1,3 +1,5 @@
+"""Parse pytest files into PCL documents and infer the production subject under test."""
+
 from __future__ import annotations
 
 import ast
@@ -48,6 +50,7 @@ class HttpRoute:
 
 
 def parse_pytest_documents(pytest_path: Path) -> list[PCLDocument]:
+    """Build one logical PCL document per inferred production subject."""
     files = _collect_test_files(pytest_path)
     if not files:
         raise ValueError(f"No pytest files found under: {pytest_path}")
@@ -66,6 +69,7 @@ def parse_pytest_documents(pytest_path: Path) -> list[PCLDocument]:
 
 
 def parse_pytest_path(pytest_path: Path) -> PCLDocument:
+    """Keep the legacy single-document view by merging all inferred subjects."""
     documents = parse_pytest_documents(pytest_path)
     if len(documents) == 1:
         return documents[0]
@@ -103,6 +107,7 @@ def _build_document_for_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     imports: dict[str, ImportedSymbol],
 ) -> PCLDocument:
+    """Build one intermediate document from a single pytest function node."""
     subject = _infer_subject_location(file_path, node, imports)
     document = PCLDocument.create(
         file=subject.file,
@@ -132,6 +137,7 @@ def _build_document_for_function(
 
 
 def _merge_documents_by_subject(documents: list[PCLDocument]) -> list[PCLDocument]:
+    """Group intermediate documents by the inferred production subject."""
     grouped: OrderedDict[tuple[str, str, str], list[PCLDocument]] = OrderedDict()
     for document in documents:
         key = (document.file, document.method, document.source_path)
@@ -147,6 +153,7 @@ def _merge_documents_by_subject(documents: list[PCLDocument]) -> list[PCLDocumen
 
 
 def _merge_related_documents(documents: list[PCLDocument]) -> PCLDocument:
+    """Merge multiple pytest functions that target the same production function."""
     first = documents[0]
     merged = PCLDocument.create(
         file=first.file,
@@ -182,6 +189,7 @@ def _merge_related_documents(documents: list[PCLDocument]) -> PCLDocument:
 
 
 def _merge_source_labels(values: list[str]) -> str:
+    """Collapse multiple test source labels into one display string."""
     unique_values = _dedupe_preserve_order(value for value in values if value)
     if not unique_values:
         return ""
@@ -195,6 +203,9 @@ def _infer_subject_location(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     imports: dict[str, ImportedSymbol],
 ) -> SubjectLocation:
+    """Infer the production file and function that the pytest function exercises."""
+    # Prefer proof from imports and HTTP routes. The fallback keeps Step1 document generation
+    # usable, but downstream coverage analysis rejects unresolved test-file subjects.
     subject = _infer_direct_call_subject(node, imports)
     if subject is not None:
         return subject
@@ -214,6 +225,7 @@ def _infer_direct_call_subject(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     imports: dict[str, ImportedSymbol],
 ) -> SubjectLocation | None:
+    """Infer the tested subject from imported function or module calls."""
     for call in _iter_calls_in_order(node):
         if isinstance(call.func, ast.Name):
             imported = imports.get(call.func.id)
@@ -237,6 +249,7 @@ def _infer_http_subject(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     imports: dict[str, ImportedSymbol],
 ) -> SubjectLocation | None:
+    """Infer the tested route handler from HTTP client calls in the test body."""
     routes = _collect_candidate_routes(imports)
     if not routes:
         return None
@@ -270,6 +283,7 @@ def _infer_http_subject(
 
 
 def _subject_from_route(route: HttpRoute) -> SubjectLocation:
+    """Convert a matched HTTP route into a standard subject descriptor."""
     return SubjectLocation(
         file=route.module_path.name,
         method=route.handler,
@@ -278,6 +292,7 @@ def _subject_from_route(route: HttpRoute) -> SubjectLocation:
 
 
 def _preferred_http_methods(test_name: str) -> set[str]:
+    """Bias ambiguous route matches with the intent encoded in the test name."""
     lowered = test_name.lower()
     if "create_" in lowered:
         return {"post"}
@@ -291,6 +306,7 @@ def _preferred_http_methods(test_name: str) -> set[str]:
 
 
 def _collect_candidate_routes(imports: dict[str, ImportedSymbol]) -> list[HttpRoute]:
+    """Collect FastAPI-style route declarations from imported modules."""
     routes: list[HttpRoute] = []
     seen_modules: set[Path] = set()
     for imported in imports.values():
@@ -304,23 +320,27 @@ def _collect_candidate_routes(imports: dict[str, ImportedSymbol]) -> list[HttpRo
 def _iter_calls_in_order(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> list[ast.Call]:
+    """Return function calls in source order to preserve inference priority."""
     calls = [child for child in ast.walk(node) if isinstance(child, ast.Call)]
     calls.sort(key=lambda child: (getattr(child, "lineno", 0), getattr(child, "col_offset", 0)))
     return calls
 
 
 def _collect_test_files(path: Path) -> list[Path]:
+    """Expand a file or directory input into pytest-style test files."""
     if path.is_file():
         return [path] if _is_test_file(path) else []
     return sorted(file for file in path.rglob("*.py") if _is_test_file(file))
 
 
 def _is_test_file(path: Path) -> bool:
+    """Recognize the pytest file naming conventions supported by TeaForge."""
     name = path.name
     return name.startswith("test_") or name.endswith("_test.py")
 
 
 def _extract_imports(tree: ast.Module) -> dict[str, ImportedSymbol]:
+    """Map imported names in a test module to resolvable source files."""
     imports: dict[str, ImportedSymbol] = {}
     for node in tree.body:
         if isinstance(node, ast.Import):
@@ -348,6 +368,7 @@ def _extract_imports(tree: ast.Module) -> dict[str, ImportedSymbol]:
 
 @lru_cache(maxsize=None)
 def _resolve_module_path(module_name: str) -> Path | None:
+    """Resolve an import string to a local module or package path in the workspace."""
     if not module_name:
         return None
     base_path = Path.cwd() / Path(*module_name.split("."))
@@ -361,6 +382,7 @@ def _resolve_module_path(module_name: str) -> Path | None:
 
 
 def _resolve_symbol_subject(module_path: Path, symbol_name: str) -> SubjectLocation | None:
+    """Build a subject descriptor only when the target module really defines the symbol."""
     if not _module_defines_symbol(module_path, symbol_name):
         return None
     return SubjectLocation(
@@ -372,6 +394,7 @@ def _resolve_symbol_subject(module_path: Path, symbol_name: str) -> SubjectLocat
 
 @lru_cache(maxsize=None)
 def _module_defines_symbol(module_path: Path, symbol_name: str) -> bool:
+    """Check whether a Python module declares the requested top-level function."""
     if module_path.suffix != ".py" or not module_path.exists():
         return False
     tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
@@ -383,6 +406,7 @@ def _module_defines_symbol(module_path: Path, symbol_name: str) -> bool:
 
 @lru_cache(maxsize=None)
 def _collect_http_routes(module_path: Path) -> tuple[HttpRoute, ...]:
+    """Extract HTTP route declarations from one imported Python module."""
     if module_path.suffix != ".py" or not module_path.exists():
         return ()
     tree = ast.parse(module_path.read_text(encoding="utf-8"), filename=str(module_path))
@@ -402,6 +426,7 @@ def _parse_http_route(
     decorator: ast.expr,
     handler_name: str,
 ) -> HttpRoute | None:
+    """Parse one decorator into an HTTP route when it matches a supported pattern."""
     if not isinstance(decorator, ast.Call):
         return None
     if not isinstance(decorator.func, ast.Attribute):
@@ -420,6 +445,7 @@ def _parse_http_route(
 
 
 def _extract_path_literal(node: ast.expr) -> str | None:
+    """Convert static or f-string route expressions into a comparable path pattern."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.JoinedStr):
@@ -434,12 +460,14 @@ def _extract_path_literal(node: ast.expr) -> str | None:
 
 
 def _route_matches(request_path: str, route_path: str) -> bool:
+    """Match a concrete request path against a route template with path params."""
     if request_path == route_path:
         return True
     return re.fullmatch(_route_pattern(route_path), request_path) is not None
 
 
 def _route_pattern(route_path: str) -> str:
+    """Translate a route template into a regex usable for request matching."""
     if route_path == "/":
         return r"/"
     segments = route_path.strip("/").split("/")
@@ -456,6 +484,7 @@ def _route_pattern(route_path: str) -> str:
 def _extract_cases_from_function(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> list[dict[str, Any]]:
+    """Extract one or more testcase payloads from a pytest function definition."""
     docstring = ast.get_docstring(node) or ""
     testcase_title = docstring.splitlines()[0].strip() if docstring else _to_title(node.name)
     markers = _extract_markers(node.decorator_list)
@@ -502,6 +531,7 @@ def _extract_cases_from_function(
 
 
 def _extract_markers(decorators: list[ast.expr]) -> list[str]:
+    """Collect pytest marker names from a function's decorators."""
     markers: list[str] = []
     for dec in decorators:
         target = dec.func if isinstance(dec, ast.Call) else dec
@@ -512,6 +542,7 @@ def _extract_markers(decorators: list[ast.expr]) -> list[str]:
 
 
 def _extract_marker_name(expr: ast.expr) -> str | None:
+    """Return the marker name when the expression looks like pytest.mark.<name>."""
     if isinstance(expr, ast.Attribute):
         chain = _attr_chain(expr)
         if len(chain) >= 3 and chain[0] == "pytest" and chain[1] == "mark":
@@ -520,6 +551,7 @@ def _extract_marker_name(expr: ast.expr) -> str | None:
 
 
 def _extract_parametrize(decorators: list[ast.expr]) -> dict[str, Any] | None:
+    """Parse the first supported pytest.mark.parametrize decorator, if present."""
     for dec in decorators:
         if not isinstance(dec, ast.Call):
             continue
@@ -535,12 +567,14 @@ def _extract_parametrize(decorators: list[ast.expr]) -> dict[str, Any] | None:
 
 
 def _is_pytest_parametrize(func: ast.expr) -> bool:
+    """Identify the exact attribute chain used by pytest parametrization."""
     if isinstance(func, ast.Attribute):
         return _attr_chain(func) == ["pytest", "mark", "parametrize"]
     return False
 
 
 def _parse_argnames(node: ast.expr) -> list[str]:
+    """Normalize the parametrize argnames expression into a list of names."""
     value = _evaluate_node(node, {})
     if isinstance(value, str):
         return [part.strip() for part in value.split(",") if part.strip()]
@@ -550,6 +584,7 @@ def _parse_argnames(node: ast.expr) -> list[str]:
 
 
 def _parse_rows(argnames: list[str], node: ast.expr) -> list[dict[str, Any]]:
+    """Normalize parametrized row data into dictionaries keyed by argument name."""
     value = _evaluate_node(node, {})
     if len(argnames) == 1:
         if isinstance(value, (list, tuple)):
@@ -569,6 +604,7 @@ def _parse_rows(argnames: list[str], node: ast.expr) -> list[dict[str, Any]]:
 
 
 def _parse_ids(keywords: list[ast.keyword]) -> list[str]:
+    """Extract explicit pytest parametrize ids when they are statically evaluable."""
     for keyword in keywords:
         if keyword.arg != "ids":
             continue
@@ -581,6 +617,7 @@ def _parse_ids(keywords: list[ast.keyword]) -> list[str]:
 def _extract_input_templates(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> OrderedDict[str, list[ast.expr]]:
+    """Collect request payload expressions from HTTP client calls in the test."""
     templates: OrderedDict[str, list[ast.expr]] = OrderedDict()
     calls = [
         child for child in ast.walk(node) if isinstance(child, ast.Call)
@@ -603,6 +640,7 @@ def _append_dict_template(
     templates: OrderedDict[str, list[ast.expr]],
     payload: ast.Dict,
 ) -> None:
+    """Append key/value expressions from one literal dict payload into the template map."""
     for key_node, value_node in zip(payload.keys, payload.values):
         if key_node is None:
             continue
@@ -616,6 +654,7 @@ def _build_case_inputs(
     raw_row: dict[str, Any],
     input_templates: OrderedDict[str, list[ast.expr]],
 ) -> dict[str, str]:
+    """Render input values for one testcase from templates or parametrize rows."""
     inputs: OrderedDict[str, str] = OrderedDict()
     for key, expr_nodes in input_templates.items():
         rendered_values = [_render_input_value(expr, raw_row) for expr in expr_nodes]
@@ -636,6 +675,7 @@ def _build_case_inputs(
 
 
 def _extract_output_expectations(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Extract assert and pytest.raises expectations from the test body."""
     expectations: list[str] = []
     for child in ast.walk(node):
         if isinstance(child, ast.Assert):
@@ -646,6 +686,7 @@ def _extract_output_expectations(node: ast.FunctionDef | ast.AsyncFunctionDef) -
 
 
 def _extract_raises_expectation(items: list[ast.withitem]) -> list[str]:
+    """Extract pytest.raises expectations from with-statement contexts."""
     expectations: list[str] = []
     for item in items:
         context_expr = item.context_expr
@@ -661,6 +702,7 @@ def _extract_raises_expectation(items: list[ast.withitem]) -> list[str]:
 
 
 def _build_input_rows(cases: list[PCLTestCase]) -> list[PCLMatrixRow]:
+    """Build the PCL input matrix rows from testcase input values."""
     row_hits: OrderedDict[tuple[str, str], dict[str, str]] = OrderedDict()
     for case in cases:
         for item, value in case.inputs.items():
@@ -682,6 +724,7 @@ def _build_input_rows(cases: list[PCLTestCase]) -> list[PCLMatrixRow]:
 
 
 def _build_output_rows(cases: list[PCLTestCase]) -> list[PCLMatrixRow]:
+    """Build the PCL output matrix rows from testcase assertions."""
     row_hits: OrderedDict[tuple[str, str], dict[str, str]] = OrderedDict()
     for case in cases:
         checks = case.output_checks or ([case.output] if case.output else [])
@@ -705,6 +748,7 @@ def _build_output_rows(cases: list[PCLTestCase]) -> list[PCLMatrixRow]:
 
 
 def _split_output_check(check: str) -> tuple[str, str]:
+    """Split one textual expectation into a matrix item/value pair."""
     if check.startswith("raises "):
         return ("raises", check.removeprefix("raises ").strip())
     if " == " in check:
@@ -716,6 +760,7 @@ def _split_output_check(check: str) -> tuple[str, str]:
 def _group_keys_by_item(
     row_hits: OrderedDict[tuple[str, str], dict[str, str]],
 ) -> OrderedDict[tuple[str, str], dict[str, str]]:
+    """Preserve insertion order while grouping matrix rows by item name."""
     item_groups: OrderedDict[str, list[tuple[tuple[str, str], dict[str, str]]]] = OrderedDict()
     for key, hits in row_hits.items():
         item_groups.setdefault(key[0], []).append((key, hits))
@@ -728,6 +773,7 @@ def _group_keys_by_item(
 
 
 def _evaluate_node(node: ast.AST, context: dict[str, Any]) -> Any:
+    """Evaluate a limited subset of AST nodes into plain Python values."""
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, ast.Name):
@@ -769,6 +815,7 @@ def _evaluate_node(node: ast.AST, context: dict[str, Any]) -> Any:
 
 
 def _render_input_value(node: ast.AST, context: dict[str, Any]) -> str:
+    """Render one AST value into a PCL-friendly input cell string."""
     if isinstance(node, ast.Name) and node.id not in context:
         return ""
     if isinstance(node, (ast.Subscript, ast.Call, ast.Lambda)):
@@ -781,6 +828,7 @@ def _render_input_value(node: ast.AST, context: dict[str, Any]) -> str:
 
 
 def _attr_chain(expr: ast.Attribute) -> list[str]:
+    """Flatten an attribute expression into its dotted-name parts."""
     chain: list[str] = []
     cursor: ast.expr = expr
     while isinstance(cursor, ast.Attribute):
@@ -793,6 +841,7 @@ def _attr_chain(expr: ast.Attribute) -> list[str]:
 
 
 def _dedupe_preserve_order(values: Any) -> list[str]:
+    """Remove duplicates while keeping the first-seen order stable."""
     seen: set[str] = set()
     result: list[str] = []
     for value in values:
@@ -804,6 +853,7 @@ def _dedupe_preserve_order(values: Any) -> list[str]:
 
 
 def _to_text(value: Any) -> str:
+    """Convert supported values into display text for generated reports."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -812,12 +862,14 @@ def _to_text(value: Any) -> str:
 
 
 def _to_title(test_name: str) -> str:
+    """Turn a pytest function name into a human-readable fallback title."""
     if test_name.startswith("test_"):
         test_name = test_name[5:]
     return test_name.replace("_", " ").strip().capitalize()
 
 
 def _display_path(path: Path) -> str:
+    """Prefer workspace-relative paths when reporting resolved source locations."""
     try:
         return str(path.relative_to(Path.cwd()))
     except ValueError:

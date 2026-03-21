@@ -1,3 +1,5 @@
+"""Coordinate PCL generation, persistence, and testcase lookup."""
+
 from __future__ import annotations
 
 import json
@@ -21,6 +23,7 @@ def generate_pcl(
     json_output: Path | None = None,
     template_path: Path | None = None,
 ) -> list[tuple[Path, Path]]:
+    """Generate HTML and JSON outputs for each logical PCL document."""
     if not pytest_path.exists():
         raise FileNotFoundError(f"Input path does not exist: {pytest_path}")
 
@@ -49,6 +52,7 @@ def generate_pcl(
 
 
 def load_pcl_document(path: Path) -> PCLDocument:
+    """Load PCL data from JSON first, then from embedded HTML when needed."""
     if not path.exists():
         raise FileNotFoundError(f"Path does not exist: {path}")
 
@@ -69,6 +73,7 @@ def load_pcl_document(path: Path) -> PCLDocument:
 
 
 def get_testcase_description(document: PCLDocument, testcase: str) -> str:
+    """Return a human-readable testcase description by exact or fuzzy match."""
     keyword = testcase.strip()
     for case in document.testcases:
         if case.testcasecode == keyword or case.testname == keyword:
@@ -80,6 +85,7 @@ def get_testcase_description(document: PCLDocument, testcase: str) -> str:
 
 
 def _split_documents(documents: list[PCLDocument], chunk_size: int) -> list[PCLDocument]:
+    """Split oversized PCL documents into fixed-width sheets."""
     split_documents: list[PCLDocument] = []
     for document in documents:
         total_sheets = max(1, ceil(len(document.testcases) / chunk_size))
@@ -109,6 +115,7 @@ def _split_documents(documents: list[PCLDocument], chunk_size: int) -> list[PCLD
 
 
 def _filter_rows(rows: list[PCLMatrixRow], testcase_codes: set[str]) -> list[PCLMatrixRow]:
+    """Keep only matrix cells that belong to the selected testcase codes."""
     filtered: list[PCLMatrixRow] = []
     for row in rows:
         values = {code: mark for code, mark in row.values.items() if code in testcase_codes and mark}
@@ -131,6 +138,8 @@ def _resolve_output_paths(
     base_json: Path | None,
     multiple_outputs: bool,
 ) -> tuple[Path, Path]:
+    """Resolve the HTML and JSON output paths for one generated PCL document."""
+    # Multi-document runs are grouped by production file so one tested module owns one folder.
     if not multiple_outputs:
         html_path = base_html
         json_path = base_json or base_html.with_suffix(".json")
@@ -151,6 +160,7 @@ def _resolve_output_paths(
 
 
 def _build_output_suffix(document: PCLDocument) -> str:
+    """Build a stable file suffix from the method name and optional sheet index."""
     method_slug = slugify(document.method)
     if document.sheet_count > 1:
         return f"{method_slug}-sheet-{document.sheet_number:02d}"
@@ -158,6 +168,7 @@ def _build_output_suffix(document: PCLDocument) -> str:
 
 
 def _extract_embedded_json(html_content: str) -> dict:
+    """Read the JSON payload embedded in a generated PCL HTML report."""
     pattern = r"<script[^>]*id=[\"']teaforge-pcl-data[\"'][^>]*>(.*?)</script>"
     match = re.search(pattern, html_content, flags=re.DOTALL)
     if not match:
@@ -167,6 +178,7 @@ def _extract_embedded_json(html_content: str) -> dict:
 
 
 def _format_case_description(case) -> str:
+    """Format one testcase into the CLI response used by AI tooling."""
     input_text = ", ".join(f"{key}={value}" for key, value in case.inputs.items())
     return (
         f"テストケース番号: {case.testcasecode}\n"

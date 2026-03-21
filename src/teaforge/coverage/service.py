@@ -1,3 +1,5 @@
+"""Build HTML coverage reports from validated source files and Mermaid assets."""
+
 from __future__ import annotations
 
 import base64
@@ -26,6 +28,7 @@ def generate_coverage_reports(
     diagram_functions: list[str] | None = None,
     template_path: Path | None = None,
 ) -> list[Path]:
+    """Generate one report per source file, plus optional function flowchart pages."""
     if not pytest_path.exists():
         raise FileNotFoundError(f"Input path does not exist: {pytest_path}")
 
@@ -82,6 +85,7 @@ def generate_coverage_reports(
 
 
 def _ensure_functions(function_index: dict[Path, list[SourceFunction]]) -> None:
+    """Fail early when a resolved source file contains no measurable functions."""
     empty_sources = [str(source_path) for source_path, functions in function_index.items() if not functions]
     if empty_sources:
         raise ValueError(
@@ -91,6 +95,7 @@ def _ensure_functions(function_index: dict[Path, list[SourceFunction]]) -> None:
 
 
 def _normalize_requested_functions(diagram_functions: list[str] | None) -> set[str]:
+    """Normalize repeated CLI function flags into a trimmed unique set."""
     if not diagram_functions:
         return set()
     return {name.strip() for name in diagram_functions if name.strip()}
@@ -100,6 +105,7 @@ def _ensure_requested_functions_exist(
     function_index: dict[Path, list[SourceFunction]],
     selected_names: set[str],
 ) -> None:
+    """Reject requested flowchart names that do not exist in analyzed sources."""
     if not selected_names:
         return
 
@@ -118,6 +124,7 @@ def _build_selected_index(
     function_index: dict[Path, list[SourceFunction]],
     selected_names: set[str],
 ) -> dict[Path, list[SourceFunction]]:
+    """Filter the parsed function index down to the requested flowchart targets."""
     return {
         source_path: [function for function in functions if function.name in selected_names]
         for source_path, functions in function_index.items()
@@ -125,6 +132,7 @@ def _build_selected_index(
 
 
 def _ensure_diagrams(function_index: dict[Path, list[SourceFunction]], diagram_dir: Path) -> None:
+    """Require Mermaid source files for every function selected for diagram pages."""
     if not any(functions for functions in function_index.values()):
         return
 
@@ -166,6 +174,8 @@ def _build_function_section(
     page_number: int | None,
     include_diagram: bool,
 ) -> FunctionCoverage:
+    """Build the per-function coverage section rendered in the final HTML report."""
+    # Function-level metrics are derived from the source line span already parsed from AST.
     line_scope = snapshot.executed_lines | snapshot.missing_lines
     relevant_lines = {
         line for line in line_scope if function.lineno <= line <= function.end_lineno
@@ -207,6 +217,7 @@ def _build_function_section(
 
 
 def _resolve_output_path(source_path: Path, base_html: Path, multiple_outputs: bool) -> Path:
+    """Choose either the user path or a per-source report path for multi-file runs."""
     if not multiple_outputs:
         return base_html
 
@@ -216,22 +227,27 @@ def _resolve_output_path(source_path: Path, base_html: Path, multiple_outputs: b
 
 
 def _build_metric(covered: int, total: int) -> CoverageMetric:
-    percent = 100.0 if total == 0 else round((covered / total) * 100, 1)
+    """Build a coverage metric object with explicit missing and percent fields."""
+    # A zero-sized metric means there was nothing measurable, not that coverage was perfect.
+    percent = 0.0 if total == 0 else round((covered / total) * 100, 1)
     missing = max(total - covered, 0)
     return CoverageMetric(covered=covered, total=total, percent=percent, missing=missing)
 
 
 def _branch_in_function(branch: tuple[int, int], function: SourceFunction) -> bool:
+    """Check whether a branch record starts inside the function line range."""
     start_line = branch[0]
     return function.lineno <= start_line <= function.end_lineno
 
 
 def _format_branch(branch: tuple[int, int]) -> str:
+    """Render a branch tuple into a readable report label."""
     start, end = branch
     return f"{start} -> {'exit' if end < 0 else end}"
 
 
 def _load_svg_data_uri(svg_path: Path) -> str:
+    """Encode a rendered SVG file as a data URI for self-contained HTML output."""
     svg_content = svg_path.read_text(encoding="utf-8").strip()
     normalized = re.sub(r"^<\?xml[^>]*\?>\s*", "", svg_content, count=1)
     encoded = base64.b64encode(normalized.encode("utf-8")).decode("ascii")

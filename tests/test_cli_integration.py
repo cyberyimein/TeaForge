@@ -57,3 +57,27 @@ def test_get_command_reads_embedded_html_without_sibling_json(tmp_path):
     )
     assert get_result.exit_code == 0
     assert "テストケース番号: TC-001" in get_result.stdout
+
+
+def test_help_command_shows_root_help():
+    result = runner.invoke(app, ["help"])
+
+    assert result.exit_code == 0
+    assert "TeaForge CLI: generate PCL and coverage reports from pytest tests." in result.stdout
+    assert "pcl" in result.stdout
+    assert "coverage" in result.stdout
+
+
+def test_help_command_shows_nested_command_help():
+    result = runner.invoke(app, ["help", "coverage", "generate"])
+
+    assert result.exit_code == 0
+    assert "Generate a file-level C0/C1 report" in result.stdout
+    assert "--diagram-dir" in result.stdout
+
+
+def test_help_command_rejects_unknown_path():
+    result = runner.invoke(app, ["help", "unknown"])
+
+    assert result.exit_code == 1
+    assert "Unknown command path: unknown" in result.stderr

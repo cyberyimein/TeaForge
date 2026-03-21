@@ -1,3 +1,5 @@
+"""Define the serialized data contract for HTML coverage reports."""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -54,6 +56,7 @@ class CoverageDocument:
         requested_functions: list[str],
         functions: list[FunctionCoverage],
     ) -> "CoverageDocument":
+        """Create a report document with a stable page count for summary and flowchart pages."""
         return cls(
             title="Coverage Report",
             file=file,
@@ -68,4 +71,5 @@ class CoverageDocument:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the report document into JSON-ready primitive structures."""
         return asdict(self)

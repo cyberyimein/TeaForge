@@ -1,3 +1,5 @@
+"""Render coverage documents into standalone HTML reports."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +11,7 @@ from .models import CoverageDocument
 
 
 def default_template_path() -> Path:
+    """Return the built-in coverage report template path."""
     return Path(__file__).resolve().parents[3] / "templates" / "coverage_report.html"
 
 
@@ -16,6 +19,7 @@ def render_coverage_html(
     document: CoverageDocument,
     template_path: Path | None = None,
 ) -> str:
+    """Render one coverage document and embed the JSON payload for downstream tooling."""
     template_file = template_path or default_template_path()
     env = Environment(
         loader=FileSystemLoader(str(template_file.parent)),

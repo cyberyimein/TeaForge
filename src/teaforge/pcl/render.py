@@ -1,3 +1,5 @@
+"""Render PCL documents into HTML using the bundled Jinja template."""
+
 from __future__ import annotations
 
 import json
@@ -12,10 +14,12 @@ CASE_SLOTS_PER_SHEET = 25
 
 
 def default_template_path() -> Path:
+    """Return the built-in PCL template path."""
     return Path(__file__).resolve().parents[3] / "templates" / "pcl.html"
 
 
 def render_pcl_html(document: PCLDocument, template_path: Path | None = None) -> str:
+    """Render one PCL document and embed its JSON payload for later lookup."""
     template_file = template_path or default_template_path()
     env = Environment(
         loader=FileSystemLoader(str(template_file.parent)),
@@ -53,6 +57,7 @@ def render_pcl_html(document: PCLDocument, template_path: Path | None = None) ->
 
 
 def _prepare_grouped_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add rowspan metadata so repeated items render as grouped table cells."""
     prepared: list[dict[str, Any]] = []
     cursor = 0
     while cursor < len(rows):

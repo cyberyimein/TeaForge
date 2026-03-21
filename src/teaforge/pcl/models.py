@@ -1,3 +1,5 @@
+"""Define the serialized data contract for generated PCL documents."""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -53,6 +55,7 @@ class PCLDocument:
         test_method: str | None = None,
         test_source_path: str | None = None,
     ) -> "PCLDocument":
+        """Create a document with consistent defaults for generation and lookup flows."""
         return cls(
             title="プログラムチェックリスト",
             file=file,
@@ -67,10 +70,12 @@ class PCLDocument:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the document and nested dataclasses into plain dictionaries."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "PCLDocument":
+        """Rebuild the nested dataclasses from JSON payloads embedded in reports."""
         return cls(
             title=payload["title"],
             file=payload["file"],

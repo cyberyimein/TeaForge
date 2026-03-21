@@ -1,3 +1,5 @@
+"""Classify testcase intent from naming hints when pytest metadata is limited."""
+
 from __future__ import annotations
 
 
@@ -17,6 +19,7 @@ EXCEPTION_HINTS = (
 
 
 def classify_type(*tokens: str) -> str:
+    """Map free-form testcase hints to the Japanese PCL type codes."""
     normalized = " ".join(tokens).lower()
     if any(keyword in normalized for keyword in EXCEPTION_HINTS):
         return "E"

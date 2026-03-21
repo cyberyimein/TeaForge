@@ -62,6 +62,28 @@ def test_coverage_generate_requires_selected_function_diagram(tmp_path):
     assert "business-function diagrams" in result.output
 
 
+def test_coverage_generate_fails_when_source_cannot_be_inferred(tmp_path):
+    output = tmp_path / "sample_coverage_report.html"
+
+    result = runner.invoke(
+        app,
+        [
+            "coverage",
+            "generate",
+            "--path",
+            "tests/fixtures/test_sample_pytest.py",
+            "--output",
+            str(output),
+            "--diagram-dir",
+            str(tmp_path / "files"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Could not determine the tested source file" in result.output
+    assert "Coverage reports require a resolvable production source target" in result.output
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("coverage") is None,
     reason="coverage.py is not installed",
