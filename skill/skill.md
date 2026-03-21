@@ -1,20 +1,37 @@
 ---
-name: skill
-description: "Generate Japanese-style unit tests, PCL documents, and Mermaid coverage reports using TeaForge CLI. USE FOR: writing pytest tests with C1 branch coverage; generating PCL (test-specification) HTML/PDF from pytest files; creating Mermaid flowchart coverage reports for business functions; deciding which functions need flowcharts. DO NOT USE FOR: general Python debugging; non-test code generation."
-argument-hint: "Describe the target module or function to test / generate reports for"
+name: TeaForge
+description: "Generate Japanese-style unit tests, PCL documents, and Mermaid coverage reports using TeaForge CLI. USE FOR: writing pytest or jest tests with C1 branch coverage; generating PCL HTML/PDF from pytest or TypeScript/Jest files; creating Mermaid flowchart coverage reports for business functions; deciding which functions need flowcharts. DO NOT USE FOR: general application debugging; non-test code generation."
+argument-hint: "Describe the target module, function, and framework (pytest or jest)"
 ---
 
 # TeaForge
 
-TeaForge CLI converts pytest automated tests into readable, exportable, queryable PCL documents and generates coverage reports with Mermaid flowcharts.
+TeaForge CLI converts automated tests into readable, exportable, queryable PCL documents and generates coverage reports with Mermaid flowcharts.
 
 ## When to Use
 
 - Writing unit tests that follow Japanese-style testing methodology (parameter × branch full coverage)
-- Generating PCL (test-specification) documents from existing pytest files
+- Generating PCL (test-specification) documents from existing pytest or Jest files
 - Producing coverage reports with Mermaid flowchart diagrams
 - Deciding which functions deserve flowcharts in coverage reports
 - Exporting test documentation to PDF
+
+## Supported Frameworks
+
+### pytest
+
+- Default framework for TeaForge commands
+- Best fit for current Python / FastAPI flows
+- Supports the existing PCL and coverage pipeline end to end
+
+### jest / TypeScript
+
+- Enabled through `--framework jest`
+- Current parser support focuses on a constrained but practical subset:
+    `test(...)`, `it(...)`, `test.only(...)`, `it.only(...)`, `test.each([...])(...)`
+- Current coverage support expects Jest to emit Istanbul `coverage-final.json`
+- Current import resolution focuses on relative local imports
+- Current source parsing supports top-level function declarations, arrow functions, and class methods
 
 ## Japanese-Style Unit Testing Methodology
 
@@ -48,12 +65,14 @@ Cover every execution path through the function:
 
 | Command | Purpose |
 |---------|---------|
-| `teaforge pcl generate --path <pytest> --output <html>` | Generate PCL document from pytest file |
+| `teaforge pcl generate --path <tests> --output <html>` | Generate PCL document from test file or directory |
+| `teaforge pcl generate --framework jest --path <jest-test> --output <html>` | Generate PCL document from Jest / TypeScript tests |
 | `teaforge export --path <html> --output <pdf>` | Export HTML report to PDF |
 | `teaforge get --path <json\|html> --testcase <code\|name>` | Query a specific test case |
 | `teaforge mermaid validate --code <mermaid>` | Validate Mermaid syntax |
 | `teaforge mermaid generate --source <file> --function <fn> --code <mermaid> --output-dir <dir>` | Persist and render a Mermaid diagram |
-| `teaforge coverage generate --path <pytest> --output <html> --function <fn> --diagram-dir <dir>` | Generate coverage report with flowcharts |
+| `teaforge coverage generate --path <tests> --output <html> --function <fn> --diagram-dir <dir>` | Generate coverage report with flowcharts |
+| `teaforge coverage generate --framework jest --path <jest-test> --output <html> --function <fn> --diagram-dir <dir>` | Generate a Jest / TypeScript coverage report |
 
 ## Procedure
 
@@ -66,6 +85,12 @@ Cover every execution path through the function:
 5. Derive variant tests — change exactly one input or trigger exactly one different branch per test.
 6. Verify C1 coverage reaches 100% using `teaforge coverage generate`.
 
+### Choosing the Framework
+
+1. Use the default `pytest` flow for Python tests.
+2. Use `--framework jest` for Node.js / TypeScript Jest tests.
+3. Keep the framework choice consistent between PCL generation and coverage generation.
+
 ### Generating Coverage Reports (End-to-End)
 
 Coverage reports require Mermaid flowcharts for selected business functions. The AI is responsible for **choosing which functions need flowcharts**, **writing the Mermaid code**, and **invoking the CLI**. Follow these steps:
@@ -74,10 +99,19 @@ Coverage reports require Mermaid flowcharts for selected business functions. The
 2. **Select business functions** that need flowcharts (see Flowchart Selection below).
 3. **Write Mermaid flowchart code** for each selected function (see Writing Mermaid Flowcharts below).
 4. **Validate** each diagram: `teaforge mermaid validate --code "<mermaid>"`.
-5. **Persist** each diagram: `teaforge mermaid generate --source <source.py> --function <fn> --code "<mermaid>" --output-dir <diagram-dir>`.
-6. **Generate the report**: `teaforge coverage generate --path <pytest> --output <report.html> --function <fn1> --function <fn2> --diagram-dir <diagram-dir>`.
+5. **Persist** each diagram: `teaforge mermaid generate --source <source-file> --function <fn> --code "<mermaid>" --output-dir <diagram-dir>`.
+6. **Generate the report**:
+    - pytest: `teaforge coverage generate --path <pytest> --output <report.html> --function <fn1> --function <fn2> --diagram-dir <diagram-dir>`
+    - jest: `teaforge coverage generate --framework jest --path <jest-test> --output <report.html> --function <fn1> --function <fn2> --diagram-dir <diagram-dir>`
 
 The `--function` flag is repeatable — pass it once per function that has a flowchart.
+
+### Jest-Specific Notes
+
+- `test.each([...])(...)` is supported and should be preferred for boundary-value matrices in Jest.
+- The AI should still follow the same Japanese PCL principle: derive neighboring boundary / abnormal cases from one normal baseline.
+- TeaForge currently expects Jest row data to be statically readable array literals.
+- If the parser cannot prove the business source file under test, PCL generation may still fallback for display, but coverage generation will fail fast.
 
 ### Flowchart Selection
 
@@ -163,8 +197,11 @@ When using `teaforge mermaid generate`, the CLI automatically names the `.mmd` f
 {source_stem}_{function_name}_coverage_report.mmd
 ```
 For example, source `main.py` + function `create_item` → `main_create_item_coverage_report.mmd`.
+For TypeScript, source `user.ts` + function `createUser` → `user_createuser_coverage_report.mmd`.
 
 ### Generating PCL Documents
 
-1. Run `teaforge pcl generate --path <pytest file> --output <output.html>`.
+1. Run one of these:
+    - pytest: `teaforge pcl generate --path <pytest file> --output <output.html>`
+    - jest: `teaforge pcl generate --framework jest --path <jest-test> --output <output.html>`
 2. Optionally export to PDF: `teaforge export --path <output.html> --output <output.pdf>`.

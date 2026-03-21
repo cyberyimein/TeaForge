@@ -63,7 +63,7 @@ def test_help_command_shows_root_help():
     result = runner.invoke(app, ["help"])
 
     assert result.exit_code == 0
-    assert "TeaForge CLI: generate PCL and coverage reports from pytest tests." in result.stdout
+    assert "TeaForge CLI: generate PCL and coverage reports from automated tests." in result.stdout
     assert "pcl" in result.stdout
     assert "coverage" in result.stdout
 
@@ -81,3 +81,46 @@ def test_help_command_rejects_unknown_path():
 
     assert result.exit_code == 1
     assert "Unknown command path: unknown" in result.stderr
+
+
+def test_generate_pcl_with_jest_framework(tmp_path):
+    html_path = tmp_path / "pcl.html"
+    source = Path("tests/fixtures/test_sample_jest.test.ts")
+
+    result = runner.invoke(
+        app,
+        [
+            "pcl",
+            "generate",
+            "--framework",
+            "jest",
+            "--path",
+            str(source),
+            "--output",
+            str(html_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    output_dir = tmp_path / "user"
+    assert (output_dir / "pcl-createuser.json").exists()
+    assert (output_dir / "pcl-getuser.json").exists()
+
+
+def test_generate_pcl_rejects_unknown_framework(tmp_path):
+    result = runner.invoke(
+        app,
+        [
+            "pcl",
+            "generate",
+            "--framework",
+            "unknown",
+            "--path",
+            str(Path("tests/fixtures/test_sample_pytest.py")),
+            "--output",
+            str(tmp_path / "pcl.html"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Unsupported framework: unknown" in result.stderr

@@ -13,7 +13,7 @@ from teaforge.coverage.service import generate_coverage_reports
 from teaforge.pcl.pdf import export_pdf_from_html
 from teaforge.pcl.service import generate_pcl, get_testcase_description, load_pcl_document
 
-app = typer.Typer(help="TeaForge CLI: generate PCL and coverage reports from pytest tests.")
+app = typer.Typer(help="TeaForge CLI: generate PCL and coverage reports from automated tests.")
 pcl_app = typer.Typer(help="PCL commands")
 mermaid_app = typer.Typer(help="Mermaid commands")
 coverage_app = typer.Typer(help="Coverage report commands")
@@ -42,8 +42,13 @@ def help_command(
 
 @pcl_app.command("generate")
 def pcl_generate(
-    path: Path = typer.Option(..., "--path", help="pytest test file or directory"),
+    path: Path = typer.Option(..., "--path", help="test file or directory"),
     output: Path = typer.Option(..., "--output", help="output html path"),
+    framework: str = typer.Option(
+        "pytest",
+        "--framework",
+        help="test framework to parse: pytest or jest",
+    ),
     json_output: Path | None = typer.Option(
         None,
         "--json-output",
@@ -55,13 +60,14 @@ def pcl_generate(
         help="optional custom html template path",
     ),
 ) -> None:
-    """Generate PCL HTML and JSON from pytest tests."""
+    """Generate PCL HTML and JSON from pytest or Jest tests."""
     try:
         generated_files = generate_pcl(
-            pytest_path=path,
+            test_path=path,
             html_output=output,
             json_output=json_output,
             template_path=template,
+            framework=framework,
         )
     except (FileNotFoundError, ValueError) as exc:
         typer.echo(f"Error: {exc}", err=True)
@@ -152,8 +158,13 @@ def mermaid_generate(
 
 @coverage_app.command("generate")
 def coverage_generate(
-    path: Path = typer.Option(..., "--path", help="pytest test file or directory"),
+    path: Path = typer.Option(..., "--path", help="test file or directory"),
     output: Path = typer.Option(..., "--output", help="output html path"),
+    framework: str = typer.Option(
+        "pytest",
+        "--framework",
+        help="test framework to analyze: pytest or jest",
+    ),
     function: list[str] | None = typer.Option(
         None,
         "--function",
@@ -178,6 +189,7 @@ def coverage_generate(
             diagram_dir=diagram_dir,
             diagram_functions=function,
             template_path=template,
+            framework=framework,
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         typer.echo(f"Error: {exc}", err=True)

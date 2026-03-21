@@ -11,7 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from teaforge.pcl.parser import parse_pytest_documents
+from teaforge.pcl.backends import normalize_pcl_framework, parse_documents_for_framework
 
 
 @dataclass(slots=True)
@@ -34,9 +34,15 @@ class SourceCoverageSnapshot:
     missing_branches: set[tuple[int, int]]
 
 
-def discover_source_files(pytest_path: Path) -> list[Path]:
-    """Return only source files that were resolved away from the pytest files."""
-    documents = parse_pytest_documents(pytest_path)
+def discover_source_files(test_path: Path, framework: str = "pytest") -> list[Path]:
+    """Return only source files that were resolved away from the test files."""
+    normalized = normalize_pcl_framework(framework)
+    if normalized == "jest":
+        from teaforge.jest.coverage import discover_jest_source_files
+
+        return discover_jest_source_files(test_path)
+
+    documents = parse_documents_for_framework(test_path, normalized)
     unresolved_documents = [document for document in documents if _document_uses_test_file_as_source(document)]
     if unresolved_documents:
         unresolved_tests = ", ".join(sorted(document.test_method for document in unresolved_documents))
@@ -50,12 +56,23 @@ def discover_source_files(pytest_path: Path) -> list[Path]:
         key=lambda path: str(path),
     )
     if not source_paths:
-        raise ValueError(f"Could not determine target source files from pytest path: {pytest_path}")
+        raise ValueError(f"Could not determine target source files from test path: {test_path}")
     return source_paths
 
 
-def parse_source_functions(source_path: Path) -> list[SourceFunction]:
-    """Collect top-level functions and class methods from a source file."""
+def parse_source_functions(source_path: Path, framework: str = "pytest") -> list[SourceFunction]:
+    """Collect measurable functions from one source file using the selected backend."""
+    normalized = normalize_pcl_framework(framework)
+    if normalized == "jest":
+        from teaforge.jest.coverage import parse_jest_source_functions
+
+        return parse_jest_source_functions(source_path)
+
+    return _parse_python_source_functions(source_path)
+
+
+def _parse_python_source_functions(source_path: Path) -> list[SourceFunction]:
+    """Collect top-level functions and class methods from a Python source file."""
     source = source_path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(source_path))
     functions: list[SourceFunction] = []
@@ -81,7 +98,25 @@ def parse_source_functions(source_path: Path) -> list[SourceFunction]:
     return functions
 
 
-def analyze_coverage(pytest_path: Path, source_paths: list[Path]) -> dict[Path, SourceCoverageSnapshot]:
+def analyze_coverage(
+    test_path: Path,
+    source_paths: list[Path],
+    framework: str = "pytest",
+) -> dict[Path, SourceCoverageSnapshot]:
+    """Run the selected test framework and map coverage payloads back to each source file."""
+    normalized = normalize_pcl_framework(framework)
+    if normalized == "jest":
+        from teaforge.jest.coverage import analyze_jest_coverage
+
+        return analyze_jest_coverage(test_path, source_paths)
+
+    return _analyze_pytest_coverage(test_path, source_paths)
+
+
+def _analyze_pytest_coverage(
+    pytest_path: Path,
+    source_paths: list[Path],
+) -> dict[Path, SourceCoverageSnapshot]:
     """Run pytest through coverage.py and map the JSON payload back to each source file."""
     _ensure_runtime_dependencies()
 

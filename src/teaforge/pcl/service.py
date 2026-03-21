@@ -10,24 +10,25 @@ from pathlib import Path
 
 from teaforge.naming import folder_name, slugify
 
+from .backends import parse_documents_for_framework
 from .models import PCLDocument, PCLMatrixRow
-from .parser import parse_pytest_documents
 from .render import render_pcl_html
 
 MAX_CASES_PER_SHEET = 25
 
 
 def generate_pcl(
-    pytest_path: Path,
+    test_path: Path,
     html_output: Path,
     json_output: Path | None = None,
     template_path: Path | None = None,
+    framework: str = "pytest",
 ) -> list[tuple[Path, Path]]:
     """Generate HTML and JSON outputs for each logical PCL document."""
-    if not pytest_path.exists():
-        raise FileNotFoundError(f"Input path does not exist: {pytest_path}")
+    if not test_path.exists():
+        raise FileNotFoundError(f"Input path does not exist: {test_path}")
 
-    documents = parse_pytest_documents(pytest_path)
+    documents = parse_documents_for_framework(test_path, framework)
     sheet_documents = _split_documents(documents, MAX_CASES_PER_SHEET)
     html_output.parent.mkdir(parents=True, exist_ok=True)
 

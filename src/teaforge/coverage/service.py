@@ -27,20 +27,23 @@ def generate_coverage_reports(
     diagram_dir: Path,
     diagram_functions: list[str] | None = None,
     template_path: Path | None = None,
+    framework: str = "pytest",
 ) -> list[Path]:
     """Generate one report per source file, plus optional function flowchart pages."""
     if not pytest_path.exists():
         raise FileNotFoundError(f"Input path does not exist: {pytest_path}")
 
-    source_paths = discover_source_files(pytest_path)
-    function_index = {source_path: parse_source_functions(source_path) for source_path in source_paths}
+    source_paths = discover_source_files(pytest_path, framework=framework)
+    function_index = {
+        source_path: parse_source_functions(source_path, framework=framework) for source_path in source_paths
+    }
     _ensure_functions(function_index)
     selected_names = _normalize_requested_functions(diagram_functions)
     _ensure_requested_functions_exist(function_index, selected_names)
     selected_index = _build_selected_index(function_index, selected_names)
     _ensure_diagrams(selected_index, diagram_dir)
 
-    snapshots = analyze_coverage(pytest_path, source_paths)
+    snapshots = analyze_coverage(pytest_path, source_paths, framework=framework)
     html_output.parent.mkdir(parents=True, exist_ok=True)
 
     outputs: list[Path] = []
