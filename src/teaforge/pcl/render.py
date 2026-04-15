@@ -35,6 +35,13 @@ def render_pcl_html(document: PCLDocument, template_path: Path | None = None) ->
             "type": case["type"],
             "testcase": case["testcase"],
             "testname": case["testname"],
+            "screen_name": case.get("screen_name", ""),
+            "entry_url": case.get("entry_url", ""),
+            "preconditions": case.get("preconditions", []),
+            "input_actions": case.get("input_actions", []),
+            "ui_outputs": case.get("ui_outputs", []),
+            "navigation_outputs": case.get("navigation_outputs", []),
+            "verification_mode": case.get("verification_mode", ""),
             "executed_date": case.get("executed_date", ""),
             "bug_number": case.get("bug_number", ""),
         }
@@ -46,6 +53,17 @@ def render_pcl_html(document: PCLDocument, template_path: Path | None = None) ->
     ]
     input_rows = _prepare_grouped_rows(payload["input_rows"])
     output_rows = _prepare_grouped_rows(payload["output_rows"])
+    frontend_cases = [
+        case
+        for case in case_columns
+        if case["screen_name"]
+        or case["entry_url"]
+        or case["preconditions"]
+        or case["input_actions"]
+        or case["ui_outputs"]
+        or case["navigation_outputs"]
+        or case["verification_mode"]
+    ]
     return template.render(
         document=payload,
         embedded_json=embedded_json,
@@ -53,6 +71,7 @@ def render_pcl_html(document: PCLDocument, template_path: Path | None = None) ->
         decision_columns=decision_columns,
         input_rows=input_rows,
         output_rows=output_rows,
+        frontend_cases=frontend_cases,
     )
 
 

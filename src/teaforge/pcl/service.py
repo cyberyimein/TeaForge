@@ -181,11 +181,26 @@ def _extract_embedded_json(html_content: str) -> dict:
 def _format_case_description(case) -> str:
     """Format one testcase into the CLI response used by AI tooling."""
     input_text = ", ".join(f"{key}={value}" for key, value in case.inputs.items())
-    return (
+    lines = [
         f"テストケース番号: {case.testcasecode}\n"
         f"テスト目的: {case.testcase}\n"
         f"テスト名: {case.testname}\n"
-        f"区分: {case.type} (N=正常値, I=境界値, E=異常値)\n"
-        f"入力: {input_text}\n"
-        f"期待結果: {case.output}"
-    )
+        f"区分: {case.type} (N=正常値, I=境界値, E=異常値)"
+    ]
+    if getattr(case, "screen_name", ""):
+        lines.append(f"画面: {case.screen_name}")
+    if getattr(case, "entry_url", ""):
+        lines.append(f"入口URL: {case.entry_url}")
+    if getattr(case, "preconditions", None):
+        lines.append(f"前提条件: {'; '.join(case.preconditions)}")
+    lines.append(f"入力: {input_text}")
+    if getattr(case, "input_actions", None):
+        lines.append(f"操作: {'; '.join(case.input_actions)}")
+    if getattr(case, "ui_outputs", None):
+        lines.append(f"画面確認: {'; '.join(case.ui_outputs)}")
+    if getattr(case, "navigation_outputs", None):
+        lines.append(f"遷移確認: {'; '.join(case.navigation_outputs)}")
+    if getattr(case, "verification_mode", ""):
+        lines.append(f"確認方法: {case.verification_mode}")
+    lines.append(f"期待結果: {case.output}")
+    return "\n".join(lines)

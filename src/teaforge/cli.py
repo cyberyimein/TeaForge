@@ -47,7 +47,7 @@ def pcl_generate(
     framework: str = typer.Option(
         "pytest",
         "--framework",
-        help="test framework to parse: pytest or jest",
+        help="test framework to parse: pytest, jest, angular, or playwright",
     ),
     json_output: Path | None = typer.Option(
         None,
@@ -60,7 +60,7 @@ def pcl_generate(
         help="optional custom html template path",
     ),
 ) -> None:
-    """Generate PCL HTML and JSON from pytest or Jest tests."""
+    """Generate PCL HTML and JSON from pytest, Jest, Angular, or Playwright tests."""
     try:
         generated_files = generate_pcl(
             test_path=path,
@@ -163,7 +163,7 @@ def coverage_generate(
     framework: str = typer.Option(
         "pytest",
         "--framework",
-        help="test framework to analyze: pytest or jest",
+        help="test framework to analyze: pytest, jest, or angular",
     ),
     function: list[str] | None = typer.Option(
         None,

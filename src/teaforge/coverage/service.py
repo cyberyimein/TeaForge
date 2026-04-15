@@ -39,8 +39,8 @@ def generate_coverage_reports(
     }
     _ensure_functions(function_index)
     selected_names = _normalize_requested_functions(diagram_functions)
-    _ensure_requested_functions_exist(function_index, selected_names)
-    selected_index = _build_selected_index(function_index, selected_names)
+    resolved_selected_names = _resolve_selected_names(function_index, selected_names)
+    selected_index = _build_selected_index(function_index, resolved_selected_names)
     _ensure_diagrams(selected_index, diagram_dir)
 
     snapshots = analyze_coverage(pytest_path, source_paths, framework=framework)
@@ -104,23 +104,49 @@ def _normalize_requested_functions(diagram_functions: list[str] | None) -> set[s
     return {name.strip() for name in diagram_functions if name.strip()}
 
 
-def _ensure_requested_functions_exist(
+def _resolve_selected_names(
     function_index: dict[Path, list[SourceFunction]],
     selected_names: set[str],
-) -> None:
-    """Reject requested flowchart names that do not exist in analyzed sources."""
+) -> set[str]:
+    """Resolve requested function names, allowing unique short-name matches for methods."""
     if not selected_names:
-        return
+        return set()
 
     available_names = {function.name for functions in function_index.values() for function in functions}
-    missing_names = sorted(selected_names - available_names)
-    if not missing_names:
-        return
+    resolved_names: set[str] = set()
+    missing_names: list[str] = []
+    ambiguous_names: list[str] = []
 
-    raise ValueError(
-        "Requested flowchart functions were not found in the analyzed source files: "
-        + ", ".join(missing_names)
-    )
+    for requested_name in selected_names:
+        if requested_name in available_names:
+            resolved_names.add(requested_name)
+            continue
+        suffix_matches = sorted(
+            name for name in available_names if name.endswith(f".{requested_name}")
+        )
+        if len(suffix_matches) == 1:
+            resolved_names.add(suffix_matches[0])
+            continue
+        if len(suffix_matches) > 1:
+            ambiguous_names.append(requested_name)
+            continue
+        missing_names.append(requested_name)
+
+    if not missing_names and not ambiguous_names:
+        return resolved_names
+
+    message_parts: list[str] = []
+    if missing_names:
+        message_parts.append(
+            "Requested flowchart functions were not found in the analyzed source files: "
+            + ", ".join(sorted(missing_names))
+        )
+    if ambiguous_names:
+        message_parts.append(
+            "Requested flowchart functions matched multiple class methods. Use the full method name: "
+            + ", ".join(sorted(ambiguous_names))
+        )
+    raise ValueError("\n".join(message_parts))
 
 
 def _build_selected_index(
@@ -143,7 +169,7 @@ def _ensure_diagrams(function_index: dict[Path, list[SourceFunction]], diagram_d
     for source_path, functions in function_index.items():
         missing_functions = []
         for function in functions:
-            mmd_path, _ = diagram_output_paths(diagram_dir, source_path, function.name)
+            mmd_path, _ = _resolve_diagram_paths(diagram_dir, source_path, function.name)
             if not mmd_path.exists():
                 missing_functions.append(function.name)
         if missing_functions:
@@ -197,7 +223,7 @@ def _build_function_section(
     svg_path = ""
     svg_data_uri = ""
     if include_diagram:
-        mermaid_file, svg_file = diagram_output_paths(diagram_dir, source_path, function.name)
+        mermaid_file, svg_file = _resolve_diagram_paths(diagram_dir, source_path, function.name)
         render_mermaid_svg(mermaid_file, svg_file)
         mermaid_path = str(mermaid_file)
         svg_path = str(svg_file)
@@ -255,3 +281,16 @@ def _load_svg_data_uri(svg_path: Path) -> str:
     normalized = re.sub(r"^<\?xml[^>]*\?>\s*", "", svg_content, count=1)
     encoded = base64.b64encode(normalized.encode("utf-8")).decode("ascii")
     return f"data:image/svg+xml;base64,{encoded}"
+
+
+def _resolve_diagram_paths(diagram_dir: Path, source_path: Path, function_name: str) -> tuple[Path, Path]:
+    """Resolve a Mermaid file path, allowing short-name fallback for class methods."""
+    exact_paths = diagram_output_paths(diagram_dir, source_path, function_name)
+    if exact_paths[0].exists() or "." not in function_name:
+        return exact_paths
+
+    short_name = function_name.rsplit(".", 1)[1]
+    short_paths = diagram_output_paths(diagram_dir, source_path, short_name)
+    if short_paths[0].exists():
+        return short_paths
+    return exact_paths

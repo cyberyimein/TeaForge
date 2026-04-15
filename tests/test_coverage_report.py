@@ -299,3 +299,81 @@ def test_coverage_generate_rejects_unknown_framework(tmp_path):
 
     assert result.exit_code == 1
     assert "Unsupported framework: unknown" in result.stderr
+
+
+def test_coverage_generate_with_angular_framework(tmp_path, monkeypatch):
+    source = Path("tests/fixtures/angular_sample/user-page.component.ts").resolve()
+    diagram_dir = tmp_path / "files"
+    save_mermaid_diagram(
+        code="flowchart TD\n    A[Open page] --> B{Name valid?}\n    B -- Yes --> C[Submit form]\n    B -- No --> D[Show validation error]\n    C --> E[Emit result]",
+        source_path=source,
+        function_name="submitForm",
+        output_dir=diagram_dir,
+    )
+
+    def fake_angular_run(command: list[str], capture_output: bool, text: bool, check: bool):
+        assert command[:2] == ["npx", "jest"]
+        coverage_dir = Path(command[command.index("--coverageDirectory") + 1])
+        payload = {
+            str(source): {
+                "path": str(source),
+                "statementMap": {
+                    "0": {"start": {"line": 1}, "end": {"line": 1}},
+                    "1": {"start": {"line": 4}, "end": {"line": 10}},
+                    "2": {"start": {"line": 12}, "end": {"line": 17}},
+                },
+                "s": {"0": 1, "1": 1, "2": 1},
+                "branchMap": {
+                    "0": {
+                        "line": 5,
+                        "type": "if",
+                        "locations": [
+                            {"start": {"line": 5}, "end": {"line": 7}},
+                            {"start": {"line": 8}, "end": {"line": 10}},
+                        ],
+                    }
+                },
+                "b": {"0": [1, 1]},
+            }
+        }
+        coverage_dir.mkdir(parents=True, exist_ok=True)
+        (coverage_dir / "coverage-final.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def fake_render_mermaid_svg(mmd_path: Path, svg_path: Path) -> None:
+        svg_path.parent.mkdir(parents=True, exist_ok=True)
+        svg_path.write_text(
+            f"<svg xmlns='http://www.w3.org/2000/svg'><text>{mmd_path.stem}</text></svg>",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("teaforge.angular.coverage.subprocess.run", fake_angular_run)
+    monkeypatch.setattr(coverage_service, "render_mermaid_svg", fake_render_mermaid_svg)
+
+    output = tmp_path / "user_page_coverage_report.html"
+    result = runner.invoke(
+        app,
+        [
+            "coverage",
+            "generate",
+            "--framework",
+            "angular",
+            "--path",
+            "tests/fixtures/angular_sample/user-page.component.spec.ts",
+            "--output",
+            str(output),
+            "--diagram-dir",
+            str(diagram_dir),
+            "--function",
+            "submitForm",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert output.exists()
+    html = output.read_text(encoding="utf-8")
+    assert "Coverage Report - submitForm" in html
+    assert "data:image/svg+xml;base64," in html

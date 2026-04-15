@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import re
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -82,19 +82,7 @@ def parse_pytest_path(pytest_path: Path) -> PCLDocument:
     case_idx = 1
     for document in documents:
         for case in document.testcases:
-            merged.testcases.append(
-                PCLTestCase(
-                    testcase=case.testcase,
-                    testname=case.testname,
-                    testcasecode=f"TC-{case_idx:03d}",
-                    inputs=case.inputs,
-                    output=case.output,
-                    type=case.type,
-                    output_checks=case.output_checks,
-                    executed_date=case.executed_date,
-                    bug_number=case.bug_number,
-                )
-            )
+            merged.testcases.append(replace(case, testcasecode=f"TC-{case_idx:03d}"))
             case_idx += 1
 
     merged.input_rows = _build_input_rows(merged.testcases)
@@ -168,19 +156,7 @@ def _merge_related_documents(documents: list[PCLDocument]) -> PCLDocument:
     case_idx = 1
     for document in documents:
         for case in document.testcases:
-            merged.testcases.append(
-                PCLTestCase(
-                    testcase=case.testcase,
-                    testname=case.testname,
-                    testcasecode=f"TC-{case_idx:03d}",
-                    inputs=case.inputs,
-                    output=case.output,
-                    type=case.type,
-                    output_checks=case.output_checks,
-                    executed_date=case.executed_date,
-                    bug_number=case.bug_number,
-                )
-            )
+            merged.testcases.append(replace(case, testcasecode=f"TC-{case_idx:03d}"))
             case_idx += 1
 
     merged.input_rows = _build_input_rows(merged.testcases)

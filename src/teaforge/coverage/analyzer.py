@@ -41,6 +41,12 @@ def discover_source_files(test_path: Path, framework: str = "pytest") -> list[Pa
         from teaforge.jest.coverage import discover_jest_source_files
 
         return discover_jest_source_files(test_path)
+    if normalized == "angular":
+        from teaforge.angular.coverage import discover_angular_source_files
+
+        return discover_angular_source_files(test_path)
+    if normalized == "playwright":
+        raise ValueError("Coverage reports do not support framework: playwright")
 
     documents = parse_documents_for_framework(test_path, normalized)
     unresolved_documents = [document for document in documents if _document_uses_test_file_as_source(document)]
@@ -67,6 +73,12 @@ def parse_source_functions(source_path: Path, framework: str = "pytest") -> list
         from teaforge.jest.coverage import parse_jest_source_functions
 
         return parse_jest_source_functions(source_path)
+    if normalized == "angular":
+        from teaforge.angular.coverage import parse_angular_source_functions
+
+        return parse_angular_source_functions(source_path)
+    if normalized == "playwright":
+        raise ValueError("Coverage reports do not support framework: playwright")
 
     return _parse_python_source_functions(source_path)
 
@@ -109,6 +121,12 @@ def analyze_coverage(
         from teaforge.jest.coverage import analyze_jest_coverage
 
         return analyze_jest_coverage(test_path, source_paths)
+    if normalized == "angular":
+        from teaforge.angular.coverage import analyze_angular_coverage
+
+        return analyze_angular_coverage(test_path, source_paths)
+    if normalized == "playwright":
+        raise ValueError("Coverage reports do not support framework: playwright")
 
     return _analyze_pytest_coverage(test_path, source_paths)
 

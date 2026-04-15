@@ -107,6 +107,52 @@ def test_generate_pcl_with_jest_framework(tmp_path):
     assert (output_dir / "pcl-getuser.json").exists()
 
 
+def test_generate_pcl_with_angular_framework(tmp_path):
+    html_path = tmp_path / "pcl.html"
+    source = Path("tests/fixtures/angular_sample")
+
+    result = runner.invoke(
+        app,
+        [
+            "pcl",
+            "generate",
+            "--framework",
+            "angular",
+            "--path",
+            str(source),
+            "--output",
+            str(html_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (tmp_path / "user_page_component" / "pcl-userpagecomponent.json").exists()
+    assert (tmp_path / "user_form_page_component" / "pcl-userformpagecomponent.json").exists()
+
+
+def test_generate_pcl_with_playwright_framework(tmp_path):
+    html_path = tmp_path / "pcl.html"
+    source = Path("tests/fixtures/playwright_sample/user-page.spec.ts")
+
+    result = runner.invoke(
+        app,
+        [
+            "pcl",
+            "generate",
+            "--framework",
+            "playwright",
+            "--path",
+            str(source),
+            "--output",
+            str(html_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (tmp_path / "user_page_spec" / "pcl-userspage.json").exists()
+    assert (tmp_path / "user_page_spec" / "pcl-usersnewpage.json").exists()
+
+
 def test_generate_pcl_rejects_unknown_framework(tmp_path):
     result = runner.invoke(
         app,

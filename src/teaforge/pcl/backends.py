@@ -7,7 +7,7 @@ from pathlib import Path
 from .models import PCLDocument
 from .parser import parse_pytest_documents
 
-SUPPORTED_PCL_FRAMEWORKS = ("pytest", "jest")
+SUPPORTED_PCL_FRAMEWORKS = ("pytest", "jest", "angular", "playwright")
 
 
 def normalize_pcl_framework(framework: str) -> str:
@@ -24,6 +24,16 @@ def parse_documents_for_framework(test_path: Path, framework: str) -> list[PCLDo
     normalized = normalize_pcl_framework(framework)
     if normalized == "pytest":
         return parse_pytest_documents(test_path)
+
+    if normalized == "angular":
+        from teaforge.angular.parser import parse_angular_documents
+
+        return parse_angular_documents(test_path)
+
+    if normalized == "playwright":
+        from teaforge.playwright.parser import parse_playwright_documents
+
+        return parse_playwright_documents(test_path)
 
     from teaforge.jest.parser import parse_jest_documents
 

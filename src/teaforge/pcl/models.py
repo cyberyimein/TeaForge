@@ -23,6 +23,13 @@ class PCLTestCase:
     inputs: dict[str, str]
     output: str
     type: str
+    screen_name: str = ""
+    entry_url: str = ""
+    preconditions: list[str] = field(default_factory=list)
+    input_actions: list[str] = field(default_factory=list)
+    ui_outputs: list[str] = field(default_factory=list)
+    navigation_outputs: list[str] = field(default_factory=list)
+    verification_mode: str = ""
     output_checks: list[str] = field(default_factory=list)
     executed_date: str = ""
     bug_number: str = ""
@@ -95,6 +102,13 @@ class PCLDocument:
                     inputs=row.get("inputs", {}),
                     output=row.get("output", ""),
                     type=row.get("type", "N"),
+                    screen_name=row.get("screen_name", ""),
+                    entry_url=row.get("entry_url", ""),
+                    preconditions=row.get("preconditions", []),
+                    input_actions=row.get("input_actions", []),
+                    ui_outputs=row.get("ui_outputs", []),
+                    navigation_outputs=row.get("navigation_outputs", []),
+                    verification_mode=row.get("verification_mode", ""),
                     output_checks=row.get("output_checks", []),
                     executed_date=row.get("executed_date", ""),
                     bug_number=row.get("bug_number", ""),

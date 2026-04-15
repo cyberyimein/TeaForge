@@ -166,10 +166,13 @@ def _resolve_module_path(test_file: Path, module_name: str) -> Path | None:
 
     base_path = (test_file.parent / module_name).resolve()
     candidates = [base_path]
-    if base_path.suffix:
+    known_suffixes = {".ts", ".js", ".tsx", ".jsx"}
+    if base_path.suffix in known_suffixes:
         candidates.append(base_path.with_suffix(base_path.suffix))
     else:
-        candidates.extend(base_path.with_suffix(suffix) for suffix in (".ts", ".js", ".tsx", ".jsx"))
+        candidates.extend(
+            Path(f"{base_path}{suffix}") for suffix in (".ts", ".js", ".tsx", ".jsx")
+        )
         candidates.extend(
             (base_path / f"index{suffix}") for suffix in (".ts", ".js", ".tsx", ".jsx")
         )
