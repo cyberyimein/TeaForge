@@ -95,7 +95,16 @@ def help_command(
         raise typer.Exit(code=1) from exc
 
     with command.make_context(info_name, [], resilient_parsing=True) as context:
-        typer.echo(command.get_help(context))
+        help_text = command.get_help(context).rstrip()
+    option_names = [
+        option
+        for parameter in command.params
+        for option in getattr(parameter, "opts", ())
+        if option.startswith("--")
+    ]
+    typer.echo(help_text)
+    if option_names:
+        typer.echo("\nOption names: " + ", ".join(dict.fromkeys(option_names)))
 
 
 @app.command("doctor")

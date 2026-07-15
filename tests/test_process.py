@@ -46,6 +46,15 @@ def test_run_process_returns_structured_result():
     assert result.stdout_truncated is False
 
 
+def test_process_capture_normalizes_platform_newlines():
+    from teaforge.process import _BoundedByteCapture
+
+    capture = _BoundedByteCapture(1024)
+    capture.feed(b"first\r\nsecond\rthird\n")
+
+    assert capture.text() == "first\nsecond\nthird\n"
+
+
 def test_run_process_drains_large_output_with_a_memory_bound():
     result = run_process(
         [sys.executable, "-c", "print('start' + 'x' * 10000 + 'finish')"],

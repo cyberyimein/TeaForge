@@ -757,6 +757,7 @@ def _to_title(test_name: str) -> str:
 def _display_path(path: Path) -> str:
     """Prefer workspace-relative paths when reporting resolved source locations."""
     try:
-        return str(path.relative_to(Path.cwd()))
+        display_path = path.relative_to(Path.cwd())
     except ValueError:
-        return str(path)
+        display_path = path
+    return display_path.as_posix()

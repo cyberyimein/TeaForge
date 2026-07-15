@@ -83,6 +83,8 @@ npm install -g @mermaid-js/mermaid-cli
 teaforge doctor --framework pytest --require-mermaid
 ```
 
+Environments that require explicit Chromium launch settings may point `TEAFORGE_MERMAID_PUPPETEER_CONFIG` to an `mmdc` Puppeteer JSON file. The repository uses `--no-sandbox` only inside its isolated CI runner; do not copy that setting into a general-purpose workstation.
+
 ### PDF
 
 PDF export uses the optional `weasyprint` package and its native Pango/Cairo dependencies. Run this check before depending on PDF output:

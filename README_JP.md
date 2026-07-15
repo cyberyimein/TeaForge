@@ -81,6 +81,8 @@ npm install -g @mermaid-js/mermaid-cli
 teaforge doctor --framework pytest --require-mermaid
 ```
 
+Chromium の起動設定が必要な環境では、`TEAFORGE_MERMAID_PUPPETEER_CONFIG` に `mmdc` 用 Puppeteer JSON ファイルを指定できます。このリポジトリの `--no-sandbox` は隔離された CI runner だけで使用します。一般的な開発端末へその設定をコピーしないでください。
+
 ### PDF
 
 PDF 出力は任意依存の `weasyprint` と Pango/Cairo のネイティブ依存を使用します。利用前に確認してください。

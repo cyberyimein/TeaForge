@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -31,6 +32,7 @@ _MERMAID_PREFIXES = (
 )
 DIAGRAM_TYPES = ("flowchart", "sequence")
 DEFAULT_RENDER_TIMEOUT_SECONDS = 120
+PUPPETEER_CONFIG_ENV = "TEAFORGE_MERMAID_PUPPETEER_CONFIG"
 
 
 def mmdc_install_message() -> str:
@@ -158,8 +160,17 @@ def _run_mmdc(mmd_path: Path, svg_path: Path) -> None:
         raise RuntimeError(mmdc_install_message())
 
     svg_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [renderer, "-i", str(mmd_path), "-o", str(svg_path), "-b", "transparent"]
+    puppeteer_config = os.environ.get(PUPPETEER_CONFIG_ENV)
+    if puppeteer_config:
+        config_path = Path(puppeteer_config).expanduser()
+        if not config_path.is_file():
+            raise FileNotFoundError(
+                f"Mermaid Puppeteer config does not exist: {config_path}"
+            )
+        command.extend(["--puppeteerConfigFile", str(config_path)])
     result = run_process(
-        [renderer, "-i", str(mmd_path), "-o", str(svg_path), "-b", "transparent"],
+        command,
         operation=f"Mermaid rendering for {mmd_path.name}",
         timeout_seconds=DEFAULT_RENDER_TIMEOUT_SECONDS,
     )

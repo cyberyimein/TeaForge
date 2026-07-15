@@ -144,7 +144,9 @@ def test_python_coverage_can_use_target_project_interpreter(tmp_path, monkeypatc
                 for value in command
                 if value.startswith("--include=")
             )
-            assert "src/app.py" in include_value.split(",")
+            assert Path("src/app.py") in [
+                Path(value) for value in include_value.split(",")
+            ]
             output_path = Path(command[command.index("-o") + 1])
             output_path.write_text(
                 json.dumps(
@@ -470,7 +472,7 @@ def test_coverage_generate_with_jest_framework(tmp_path, monkeypatch):
         timeout_seconds: int,
         operation: str,
     ):
-        assert command[0].endswith("node_modules/.bin/jest")
+        assert Path(command[0]) == project.executable
         assert "--runTestsByPath" in command
         assert cwd == Path("tests/fixtures").resolve()
         assert timeout_seconds == 120
@@ -604,7 +606,7 @@ def test_coverage_generate_with_angular_framework(tmp_path, monkeypatch):
         timeout_seconds: int,
         operation: str,
     ):
-        assert command[0].endswith("node_modules/.bin/jest")
+        assert Path(command[0]) == project.executable
         assert "--runTestsByPath" in command
         assert cwd == Path("tests/fixtures/angular_sample").resolve()
         assert timeout_seconds == 120

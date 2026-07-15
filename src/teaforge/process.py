@@ -134,7 +134,12 @@ class _BoundedByteCapture:
             omitted = self._total - len(self._head) - len(self._tail)
             marker = f"\n... [process output truncated {omitted} bytes] ...\n".encode()
             captured = bytes(self._head) + marker + bytes(self._tail)
-        return captured[: self._limit].decode("utf-8", errors="replace")
+        return (
+            captured[: self._limit]
+            .decode("utf-8", errors="replace")
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+        )
 
 
 def run_process(

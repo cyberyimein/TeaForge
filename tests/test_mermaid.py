@@ -212,3 +212,30 @@ def test_mermaid_renderer_preserves_structured_timeout(tmp_path, monkeypatch):
 
     assert error.value.code == "process-timeout"
     assert error.value.result.stdout == "partial"
+
+
+def test_mermaid_renderer_passes_explicit_puppeteer_config(tmp_path, monkeypatch):
+    mmd_path = tmp_path / "diagram.mmd"
+    svg_path = tmp_path / "diagram.svg"
+    config_path = tmp_path / "puppeteer.json"
+    mmd_path.write_text("flowchart TD\n    A-->B\n", encoding="utf-8")
+    config_path.write_text('{"args":["--no-sandbox"]}', encoding="utf-8")
+    monkeypatch.setattr(mermaid.shutil, "which", lambda _name: "/tools/mmdc")
+    monkeypatch.setenv(mermaid.PUPPETEER_CONFIG_ENV, str(config_path))
+    commands: list[list[str]] = []
+
+    def complete(command, **_kwargs):
+        commands.append(command)
+        return ProcessResult(
+            args=tuple(command),
+            returncode=0,
+            stdout="",
+            stderr="",
+            duration_seconds=0.1,
+        )
+
+    monkeypatch.setattr(mermaid, "run_process", complete)
+
+    mermaid.render_mermaid_svg(mmd_path, svg_path)
+
+    assert commands[0][-2:] == ["--puppeteerConfigFile", str(config_path)]

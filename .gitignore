@@ -23,6 +23,7 @@ demo/fastapi_crud/*.db
 !demo/jest_runtime/package-lock.json
 !tools/render/package.json
 !tools/render/package-lock.json
+!tools/render/puppeteer-ci.json
 
 # Report templates are source files, not generated output.
 !src/teaforge/templates/*.html

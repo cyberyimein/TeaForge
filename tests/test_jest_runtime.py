@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -58,7 +59,8 @@ def test_runtime_evidence_enriches_jest_document_without_replacing_static_expect
 def test_capture_jest_assertions_uses_project_local_jest_and_jsonl(tmp_path, monkeypatch):
     project = tmp_path / "project"
     test_file = project / "sample.test.js"
-    jest_bin = project / "node_modules" / ".bin" / "jest"
+    executable_name = "jest.cmd" if os.name == "nt" else "jest"
+    jest_bin = project / "node_modules" / ".bin" / executable_name
     project_setup = project / "tests" / "setup.js"
     test_file.parent.mkdir(parents=True)
     jest_bin.parent.mkdir(parents=True)

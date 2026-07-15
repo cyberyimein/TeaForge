@@ -143,6 +143,8 @@ jobs:
     name: Mermaid and PDF integration
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      TEAFORGE_MERMAID_PUPPETEER_CONFIG: ${{ github.workspace }}/tools/render/puppeteer-ci.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
