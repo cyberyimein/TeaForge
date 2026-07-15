@@ -10,8 +10,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from teaforge.discovery import discover_files
+
+from .assembly import build_input_rows, build_output_rows, merge_documents_by_subject
 from .classification import classify_type
-from .models import PCLDocument, PCLMatrixRow, PCLTestCase
+from .models import PCLDocument, PCLTestCase
 
 KNOWN_FIXTURE_NAMES = {
     "cache",
@@ -58,14 +61,14 @@ def parse_pytest_documents(pytest_path: Path) -> list[PCLDocument]:
     raw_documents: list[PCLDocument] = []
     for file_path in files:
         tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
-        imports = _extract_imports(tree)
+        imports = _extract_imports(tree, file_path)
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
                 "test_"
             ):
                 raw_documents.append(_build_document_for_function(file_path, node, imports))
 
-    return _merge_documents_by_subject(raw_documents)
+    return merge_documents_by_subject(raw_documents)
 
 
 def parse_pytest_path(pytest_path: Path) -> PCLDocument:
@@ -85,8 +88,8 @@ def parse_pytest_path(pytest_path: Path) -> PCLDocument:
             merged.testcases.append(replace(case, testcasecode=f"TC-{case_idx:03d}"))
             case_idx += 1
 
-    merged.input_rows = _build_input_rows(merged.testcases)
-    merged.output_rows = _build_output_rows(merged.testcases)
+    merged.input_rows = build_input_rows(merged.testcases)
+    merged.output_rows = build_output_rows(merged.testcases)
     return merged
 
 
@@ -119,59 +122,9 @@ def _build_document_for_function(
             )
         )
 
-    document.input_rows = _build_input_rows(document.testcases)
-    document.output_rows = _build_output_rows(document.testcases)
+    document.input_rows = build_input_rows(document.testcases)
+    document.output_rows = build_output_rows(document.testcases)
     return document
-
-
-def _merge_documents_by_subject(documents: list[PCLDocument]) -> list[PCLDocument]:
-    """Group intermediate documents by the inferred production subject."""
-    grouped: OrderedDict[tuple[str, str, str], list[PCLDocument]] = OrderedDict()
-    for document in documents:
-        key = (document.file, document.method, document.source_path)
-        grouped.setdefault(key, []).append(document)
-
-    merged_documents: list[PCLDocument] = []
-    for related_documents in grouped.values():
-        if len(related_documents) == 1:
-            merged_documents.append(related_documents[0])
-            continue
-        merged_documents.append(_merge_related_documents(related_documents))
-    return merged_documents
-
-
-def _merge_related_documents(documents: list[PCLDocument]) -> PCLDocument:
-    """Merge multiple pytest functions that target the same production function."""
-    first = documents[0]
-    merged = PCLDocument.create(
-        file=first.file,
-        method=first.method,
-        source_path=first.source_path,
-        test_file=_merge_source_labels([document.test_file for document in documents]),
-        test_method=_merge_source_labels([document.test_method for document in documents]),
-        test_source_path=_merge_source_labels([document.test_source_path for document in documents]),
-    )
-    merged.generated_at = first.generated_at
-
-    case_idx = 1
-    for document in documents:
-        for case in document.testcases:
-            merged.testcases.append(replace(case, testcasecode=f"TC-{case_idx:03d}"))
-            case_idx += 1
-
-    merged.input_rows = _build_input_rows(merged.testcases)
-    merged.output_rows = _build_output_rows(merged.testcases)
-    return merged
-
-
-def _merge_source_labels(values: list[str]) -> str:
-    """Collapse multiple test source labels into one display string."""
-    unique_values = _dedupe_preserve_order(value for value in values if value)
-    if not unique_values:
-        return ""
-    if len(unique_values) == 1:
-        return unique_values[0]
-    return f"複数 ({len(unique_values)} 件)"
 
 
 def _infer_subject_location(
@@ -304,9 +257,7 @@ def _iter_calls_in_order(
 
 def _collect_test_files(path: Path) -> list[Path]:
     """Expand a file or directory input into pytest-style test files."""
-    if path.is_file():
-        return [path] if _is_test_file(path) else []
-    return sorted(file for file in path.rglob("*.py") if _is_test_file(file))
+    return discover_files(path, is_candidate=_is_test_file)
 
 
 def _is_test_file(path: Path) -> bool:
@@ -315,26 +266,38 @@ def _is_test_file(path: Path) -> bool:
     return name.startswith("test_") or name.endswith("_test.py")
 
 
-def _extract_imports(tree: ast.Module) -> dict[str, ImportedSymbol]:
+def _extract_imports(
+    tree: ast.Module,
+    test_file: Path,
+) -> dict[str, ImportedSymbol]:
     """Map imported names in a test module to resolvable source files."""
     imports: dict[str, ImportedSymbol] = {}
+    search_roots = _import_search_roots(test_file)
     for node in tree.body:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 bind_name = alias.asname or alias.name.split(".")[0]
                 imports[bind_name] = ImportedSymbol(
-                    file_path=_resolve_module_path(alias.name),
+                    file_path=_resolve_module_path(alias.name, search_roots),
                     original_name=alias.name.rsplit(".", 1)[-1],
                 )
         if isinstance(node, ast.ImportFrom):
             module_name = node.module or ""
-            module_path = _resolve_module_path(module_name) if module_name else None
+            module_roots = (
+                (_relative_import_root(test_file, node.level),)
+                if node.level
+                else search_roots
+            )
+            module_path = _resolve_module_path(module_name, module_roots)
             for alias in node.names:
                 if alias.name == "*":
                     continue
                 bind_name = alias.asname or alias.name
                 symbol_module_name = f"{module_name}.{alias.name}" if module_name else alias.name
-                file_path = _resolve_module_path(symbol_module_name) or module_path
+                file_path = (
+                    _resolve_module_path(symbol_module_name, module_roots)
+                    or module_path
+                )
                 imports[bind_name] = ImportedSymbol(
                     file_path=file_path,
                     original_name=alias.name,
@@ -343,18 +306,36 @@ def _extract_imports(tree: ast.Module) -> dict[str, ImportedSymbol]:
 
 
 @lru_cache(maxsize=None)
-def _resolve_module_path(module_name: str) -> Path | None:
-    """Resolve an import string to a local module or package path in the workspace."""
-    if not module_name:
-        return None
-    base_path = Path.cwd() / Path(*module_name.split("."))
-    module_file = base_path.with_suffix(".py")
-    if module_file.exists():
-        return module_file
-    package_init = base_path / "__init__.py"
-    if package_init.exists():
-        return package_init
+def _resolve_module_path(
+    module_name: str,
+    search_roots: tuple[Path, ...],
+) -> Path | None:
+    """Resolve imports against the tested project instead of TeaForge's process cwd."""
+    module_parts = tuple(part for part in module_name.split(".") if part)
+    for root in search_roots:
+        base_path = root.joinpath(*module_parts)
+        module_file = base_path.with_suffix(".py") if module_parts else None
+        if module_file is not None and module_file.exists():
+            return module_file.resolve()
+        package_init = base_path / "__init__.py"
+        if package_init.exists():
+            return package_init.resolve()
     return None
+
+
+def _import_search_roots(test_file: Path) -> tuple[Path, ...]:
+    """Return deterministic roots that can own absolute imports in the target project."""
+    test_parent = test_file.resolve().parent
+    candidates = [test_parent, *test_parent.parents, Path.cwd().resolve()]
+    return tuple(dict.fromkeys(candidates))
+
+
+def _relative_import_root(test_file: Path, level: int) -> Path:
+    """Resolve the filesystem root represented by an ImportFrom relative level."""
+    root = test_file.resolve().parent
+    for _ in range(max(0, level - 1)):
+        root = root.parent
+    return root
 
 
 def _resolve_symbol_subject(module_path: Path, symbol_name: str) -> SubjectLocation | None:
@@ -675,77 +656,6 @@ def _extract_raises_expectation(items: list[ast.withitem]) -> list[str]:
         if context_expr.args:
             expectations.append(f"raises {ast.unparse(context_expr.args[0])}")
     return expectations
-
-
-def _build_input_rows(cases: list[PCLTestCase]) -> list[PCLMatrixRow]:
-    """Build the PCL input matrix rows from testcase input values."""
-    row_hits: OrderedDict[tuple[str, str], dict[str, str]] = OrderedDict()
-    for case in cases:
-        for item, value in case.inputs.items():
-            key = (item, value)
-            row_hits.setdefault(key, {})
-            row_hits[key][case.testcasecode] = "○"
-
-    rows: list[PCLMatrixRow] = []
-    for (item, value), hits in _group_keys_by_item(row_hits).items():
-        rows.append(
-            PCLMatrixRow(
-                category="input",
-                item=item,
-                value=value,
-                values={case.testcasecode: hits.get(case.testcasecode, "") for case in cases},
-            )
-        )
-    return rows
-
-
-def _build_output_rows(cases: list[PCLTestCase]) -> list[PCLMatrixRow]:
-    """Build the PCL output matrix rows from testcase assertions."""
-    row_hits: OrderedDict[tuple[str, str], dict[str, str]] = OrderedDict()
-    for case in cases:
-        checks = case.output_checks or ([case.output] if case.output else [])
-        for check in checks:
-            item, value = _split_output_check(check)
-            key = (item, value)
-            row_hits.setdefault(key, {})
-            row_hits[key][case.testcasecode] = "○"
-
-    rows: list[PCLMatrixRow] = []
-    for (item, value), hits in _group_keys_by_item(row_hits).items():
-        rows.append(
-            PCLMatrixRow(
-                category="output",
-                item=item,
-                value=value,
-                values={case.testcasecode: hits.get(case.testcasecode, "") for case in cases},
-            )
-        )
-    return rows
-
-
-def _split_output_check(check: str) -> tuple[str, str]:
-    """Split one textual expectation into a matrix item/value pair."""
-    if check.startswith("raises "):
-        return ("raises", check.removeprefix("raises ").strip())
-    if " == " in check:
-        left, right = check.split(" == ", 1)
-        return (left.strip(), right.strip())
-    return ("assertion", check)
-
-
-def _group_keys_by_item(
-    row_hits: OrderedDict[tuple[str, str], dict[str, str]],
-) -> OrderedDict[tuple[str, str], dict[str, str]]:
-    """Preserve insertion order while grouping matrix rows by item name."""
-    item_groups: OrderedDict[str, list[tuple[tuple[str, str], dict[str, str]]]] = OrderedDict()
-    for key, hits in row_hits.items():
-        item_groups.setdefault(key[0], []).append((key, hits))
-
-    grouped: OrderedDict[tuple[str, str], dict[str, str]] = OrderedDict()
-    for entries in item_groups.values():
-        for key, hits in entries:
-            grouped[key] = hits
-    return grouped
 
 
 def _evaluate_node(node: ast.AST, context: dict[str, Any]) -> Any:

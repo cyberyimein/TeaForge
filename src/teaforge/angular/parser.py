@@ -8,8 +8,8 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
 from teaforge.jest.parser import (
-    JSImport,
     JestTestBlock,
+    JSImport,
     SubjectLocation,
     _collect_test_files,
     _extract_imports,
@@ -19,9 +19,10 @@ from teaforge.jest.parser import (
     _split_top_level,
     _stringify_value,
 )
+from teaforge.pcl.assembly import build_input_rows, build_output_rows, merge_documents_by_subject
 from teaforge.pcl.classification import classify_type
 from teaforge.pcl.models import PCLDocument, PCLTestCase
-from teaforge.pcl.parser import _build_input_rows, _build_output_rows, _display_path, _merge_documents_by_subject
+from teaforge.pcl.parser import _display_path
 
 
 def parse_angular_documents(test_path: Path) -> list[PCLDocument]:
@@ -34,13 +35,20 @@ def parse_angular_documents(test_path: Path) -> list[PCLDocument]:
     for file_path in files:
         content = file_path.read_text(encoding="utf-8")
         imports = _extract_imports(file_path, content)
-        for index, block in enumerate(_extract_test_blocks(content), start=1):
+        for index, block in enumerate(
+            _extract_test_blocks(
+                content,
+                suffix=file_path.suffix,
+                source_name=str(file_path),
+            ),
+            start=1,
+        ):
             raw_documents.append(_build_document_for_block(file_path, block, imports, index))
 
     if not raw_documents:
         raise ValueError(f"No supported Angular tests found under: {test_path}")
 
-    return _merge_documents_by_subject(raw_documents)
+    return merge_documents_by_subject(raw_documents)
 
 
 def _build_document_for_block(
@@ -83,10 +91,11 @@ def _build_document_for_block(
             navigation_outputs=navigation_outputs,
             verification_mode="unit",
             output_checks=output_checks,
+            test_full_name=block.full_name or block.title,
         )
     )
-    document.input_rows = _build_input_rows(document.testcases)
-    document.output_rows = _build_output_rows(document.testcases)
+    document.input_rows = build_input_rows(document.testcases)
+    document.output_rows = build_output_rows(document.testcases)
     return document
 
 

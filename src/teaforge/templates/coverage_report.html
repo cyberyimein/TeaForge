@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" href="data:," />
+  <title>{{ document.title }} - {{ document.file }}</title>
+  <style>
+    @page summary {
+      size: A4 landscape;
+      margin: 10mm;
+    }
+
+    @page flowchart {
+      size: A4 portrait;
+      margin: 10mm;
+    }
+
+    @page sequence {
+      size: A4 landscape;
+      margin: 10mm;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+      color: #111111;
+      background: #ffffff;
+    }
+
+    .page {
+      margin: 0 auto;
+      box-sizing: border-box;
+      padding: 10px;
+    }
+
+    .summary-page {
+      page: summary;
+      width: 277mm;
+      min-height: 190mm;
+    }
+
+    .flowchart-page {
+      page: flowchart;
+      width: 190mm;
+      min-height: 277mm;
+    }
+
+    .sequence-page {
+      page: sequence;
+      width: 277mm;
+      min-height: 190mm;
+    }
+
+    .page+.page {
+      page-break-before: always;
+    }
+
+    .title-block {
+      background: #002fa7;
+      color: #ffffff;
+      border: 1px solid #001f70;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      position: relative;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.04em;
+    }
+
+    .generator-badge {
+      position: absolute;
+      right: 14px;
+      bottom: 8px;
+      font-size: 10px;
+      opacity: 0.95;
+    }
+
+    .meta-table,
+    .metric-table,
+    .function-table,
+    .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 8px;
+    }
+
+    .meta-table th,
+    .meta-table td,
+    .metric-table th,
+    .metric-table td,
+    .function-table th,
+    .function-table td,
+    .detail-table th,
+    .detail-table td {
+      border: 1px solid #222222;
+      padding: 4px 6px;
+      font-size: 11px;
+      line-height: 1.25;
+      vertical-align: top;
+    }
+
+    .meta-table th,
+    .metric-table th,
+    .function-table th,
+    .detail-table th {
+      background: #dbeafe;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    .section-title {
+      margin: 8px 0 4px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #002fa7;
+    }
+
+    .metric-value {
+      font-size: 16px;
+      font-weight: 700;
+      color: #002fa7;
+    }
+
+    .diagram-box {
+      border: 1px solid #222222;
+      background: #f8fbff;
+      padding: 8px;
+      min-height: 95mm;
+    }
+
+    .flowchart-page .diagram-box,
+    .sequence-page .diagram-box {
+      min-height: 165mm;
+    }
+
+    .diagram-box svg {
+      width: 100%;
+      height: auto;
+    }
+
+    .diagram-box img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .empty-detail {
+      color: #2f4f4f;
+    }
+
+    .footer {
+      margin-top: 6px;
+      padding-top: 4px;
+      border-top: 1px solid #002fa7;
+      text-align: right;
+      font-size: 10px;
+      color: #002fa7;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page summary-page">
+    <div class="title-block">
+      <h1>{{ document.title }}</h1>
+      <div class="generator-badge">Design by TeaForge.🍵</div>
+    </div>
+
+    <table class="meta-table">
+      <tbody>
+        <tr>
+          <th>対象ファイル</th>
+          <td>{{ document.file }}</td>
+          <th>ページ</th>
+          <td>1 / {{ document.page_count }}</td>
+        </tr>
+        <tr>
+          <th>ソース</th>
+          <td>{{ document.source_path }}</td>
+          <th>テスト入力</th>
+          <td>{{ document.test_path }}</td>
+        </tr>
+        <tr>
+          <th>生成日時</th>
+          <td>{{ document.generated_at }}</td>
+          <th>証拠ソース</th>
+          <td>{{ document.evidence_source }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <table class="detail-table">
+      <tbody>
+        <tr>
+          <th style="width: 140px;">C0 定義</th>
+          <td>{{ document.c0_definition }}</td>
+        </tr>
+        <tr>
+          <th>C1 定義</th>
+          <td>{{ document.c1_definition }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">カバレッジ概要</div>
+    <table class="metric-table">
+      <thead>
+        <tr>
+          <th style="width: 20%;">指標</th>
+          <th style="width: 20%;">割合</th>
+          <th style="width: 20%;">Covered</th>
+          <th style="width: 20%;">Total</th>
+          <th style="width: 20%;">Missing</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>C0 (行カバレッジ)</th>
+          <td class="metric-value">{% if document.c0.applicable %}{{ "%.1f"|format(document.c0.percent) }}%{% else %}N/A{% endif %}</td>
+          <td>{{ document.c0.covered }}</td>
+          <td>{{ document.c0.total }}</td>
+          <td>{{ document.c0.missing }}</td>
+        </tr>
+        <tr>
+          <th>C1 (分岐カバレッジ)</th>
+          <td class="metric-value">{% if document.c1.applicable %}{{ "%.1f"|format(document.c1.percent) }}%{% else %}N/A{% endif %}</td>
+          <td>{{ document.c1.covered }}</td>
+          <td>{{ document.c1.total }}</td>
+          <td>{{ document.c1.missing }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">関数別ページ一覧</div>
+    <table class="function-table">
+      <thead>
+        <tr>
+          <th style="width: 30px;">No.</th>
+          <th>関数</th>
+          <th style="width: 110px;">行範囲</th>
+          <th style="width: 120px;">C0</th>
+          <th style="width: 120px;">C1</th>
+          <th style="width: 70px;">ページ</th>
+          <th>Mermaid</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for function in document.functions %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ function.name }}</td>
+          <td>{{ function.lineno }} - {{ function.end_lineno }}</td>
+          <td>{% if function.c0.applicable %}{{ "%.1f"|format(function.c0.percent) }}%{% else %}N/A{% endif %}</td>
+          <td>{% if function.c1.applicable %}{{ "%.1f"|format(function.c1.percent) }}%{% else %}N/A{% endif %}</td>
+          <td>
+            {% if function.diagrams %}
+              {% for diagram in function.diagrams %}{{ diagram.page_number }}{% if not loop.last %}, {% endif %}{% endfor %}
+            {% elif function.page_number %}{{ function.page_number }}{% else %}-{% endif %}
+          </td>
+          <td>
+            {% if function.diagrams %}
+              {% for diagram in function.diagrams %}{{ diagram.kind }}: {{ diagram.mermaid_path }}{% if not loop.last %}<br />{% endif %}{% endfor %}
+            {% elif function.diagram_included %}{{ function.mermaid_path }}{% else %}Not requested{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if not document.requested_functions %}
+    <div class="section-title">業務図</div>
+    <table class="detail-table">
+      <tbody>
+        <tr>
+          <th style="width: 140px;">状態</th>
+          <td>このレポートはカバレッジ概要のみです。必要な業務関数だけ `--function` を指定してフロー図を、`--sequence` を指定してシーケンス図を追加してください。</td>
+        </tr>
+      </tbody>
+    </table>
+    {% endif %}
+
+    <div class="footer">Your AI agent generated this coverage report using TeaForge. Now it’s tea time! 🍵</div>
+  </div>
+
+  {% for function in document.functions %}
+  {% for diagram in function.diagrams %}
+  {% if diagram.kind == "sequence" %}
+  <div class="page sequence-page">
+  {% else %}
+  <div class="page flowchart-page">
+  {% endif %}
+    <div class="title-block">
+      <h1>{{ document.title }} - {{ function.name.split('.')[-1] }}</h1>
+      <div class="generator-badge">Design by TeaForge.🍵</div>
+    </div>
+
+    <table class="meta-table">
+      <tbody>
+        <tr>
+          <th>対象ファイル</th>
+          <td>{{ document.file }}</td>
+          <th>ページ</th>
+          <td>{{ diagram.page_number }} / {{ document.page_count }}</td>
+        </tr>
+        <tr>
+          <th>関数</th>
+          <td>{{ function.name }}</td>
+          <th>行範囲</th>
+          <td>{{ function.lineno }} - {{ function.end_lineno }}</td>
+        </tr>
+        <tr>
+          <th>Mermaid</th>
+          <td>{{ diagram.mermaid_path }}</td>
+          <th>SVG</th>
+          <td>{{ diagram.svg_path }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">関数別カバレッジ</div>
+    <table class="metric-table">
+      <thead>
+        <tr>
+          <th style="width: 20%;">指標</th>
+          <th style="width: 20%;">割合</th>
+          <th style="width: 20%;">Covered</th>
+          <th style="width: 20%;">Total</th>
+          <th style="width: 20%;">Missing</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>C0 (行カバレッジ)</th>
+          <td class="metric-value">{% if function.c0.applicable %}{{ "%.1f"|format(function.c0.percent) }}%{% else %}N/A{% endif %}</td>
+          <td>{{ function.c0.covered }}</td>
+          <td>{{ function.c0.total }}</td>
+          <td>{{ function.c0.missing }}</td>
+        </tr>
+        <tr>
+          <th>C1 (分岐カバレッジ)</th>
+          <td class="metric-value">{% if function.c1.applicable %}{{ "%.1f"|format(function.c1.percent) }}%{% else %}N/A{% endif %}</td>
+          <td>{{ function.c1.covered }}</td>
+          <td>{{ function.c1.total }}</td>
+          <td>{{ function.c1.missing }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">未カバー詳細</div>
+    <table class="detail-table">
+      <tbody>
+        <tr>
+          <th style="width: 140px;">未カバー行</th>
+          <td>
+            {% if function.missing_lines %}
+            {{ function.missing_lines|join(", ") }}
+            {% else %}
+            <span class="empty-detail">なし</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>未カバー分岐</th>
+          <td>
+            {% if function.missing_branches %}
+            {{ function.missing_branches|join(", ") }}
+            {% else %}
+            <span class="empty-detail">なし</span>
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">{% if diagram.kind == "sequence" %}シーケンス図{% else %}ロジックフロー図{% endif %}</div>
+    <div class="diagram-box">
+      <img src="{{ diagram.svg_data_uri }}" alt="{{ function.name }} {{ diagram.kind }} diagram" />
+    </div>
+
+    <div class="footer">Your AI agent generated this coverage report using TeaForge. Now it’s tea time! 🍵</div>
+  </div>
+  {% endfor %}
+  {% endfor %}
+
+  <script id="teaforge-coverage-data" type="application/json">{{ embedded_json | safe }}</script>
+</body>
+
+</html>

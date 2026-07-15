@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from teaforge.javascript.syntax import parse_source_functions as parse_javascript_source_functions
 from teaforge.jest.parser import parse_jest_documents
+from teaforge.jest.project import JestProject
+from teaforge.process import bounded_process_detail
 
 if TYPE_CHECKING:
     from teaforge.coverage.analyzer import SourceCoverageSnapshot, SourceFunction
@@ -38,20 +40,44 @@ def parse_jest_source_functions(source_path: Path) -> list[SourceFunction]:
     from teaforge.coverage.analyzer import SourceFunction
 
     source = source_path.read_text(encoding="utf-8")
-    functions: list[SourceFunction] = []
-    functions.extend(_parse_top_level_functions(source))
-    functions.extend(_parse_arrow_functions(source))
-    functions.extend(_parse_class_methods(source))
-    functions.sort(key=lambda function: (function.lineno, function.name))
-    return functions
+    return [
+        SourceFunction(
+            name=function.name,
+            lineno=function.start_line,
+            end_lineno=function.end_line,
+        )
+        for function in parse_javascript_source_functions(
+            source,
+            suffix=source_path.suffix,
+            source_name=str(source_path),
+        )
+    ]
 
 
 def analyze_jest_coverage(
     test_path: Path,
     source_paths: list[Path],
+    *,
+    timeout_seconds: int = 120,
 ) -> dict[Path, SourceCoverageSnapshot]:
     """Run Jest with Istanbul JSON coverage output and map it to resolved sources."""
-    resolved_test_path = test_path.resolve()
+    return _analyze_jest_coverage(
+        test_path,
+        source_paths,
+        timeout_seconds=timeout_seconds,
+        operation="Jest coverage collection",
+    )
+
+
+def _analyze_jest_coverage(
+    test_path: Path,
+    source_paths: list[Path],
+    *,
+    timeout_seconds: int,
+    operation: str,
+) -> dict[Path, SourceCoverageSnapshot]:
+    """Execute the project-local Jest once and parse its Istanbul payload."""
+    project = JestProject.discover(test_path)
     resolved_sources = [path.resolve() for path in source_paths]
 
     import tempfile
@@ -62,31 +88,24 @@ def analyze_jest_coverage(
         coverage_dir.mkdir(parents=True, exist_ok=True)
         coverage_file = coverage_dir / "coverage-final.json"
 
-        try:
-            run_result = subprocess.run(
-                [
-                    "npx",
-                    "jest",
-                    "--coverage",
-                    "--coverageReporters=json",
-                    "--coverageDirectory",
-                    str(coverage_dir),
-                    "--runInBand",
-                    str(resolved_test_path),
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except FileNotFoundError as exc:
-            raise RuntimeError(
-                "Jest coverage execution requires `npx`. Install Node.js and Jest before running coverage reports."
-            ) from exc
+        run_result = project.run(
+            [
+                "--coverage",
+                "--coverageReporters=json",
+                "--coverageDirectory",
+                str(coverage_dir),
+                "--runInBand",
+                "--runTestsByPath",
+                *[str(path) for path in project.test_files],
+            ],
+            timeout_seconds=timeout_seconds,
+            operation=operation,
+        )
 
         if run_result.returncode != 0:
-            detail = (run_result.stderr or run_result.stdout).strip()
+            detail = bounded_process_detail(run_result.stderr, run_result.stdout)
             raise RuntimeError(
-                "Jest failed while collecting coverage data. "
+                f"{operation} failed. "
                 f"Exit code: {run_result.returncode}. {detail}"
             )
 
@@ -158,17 +177,17 @@ def _collect_line_sets(
 def _collect_branch_sets(
     branches: dict,
     branch_hits: dict,
-) -> tuple[set[tuple[int, int]], set[tuple[int, int]]]:
+) -> tuple[set[tuple[int, int, str]], set[tuple[int, int, str]]]:
     """Collect covered and missing branch edges from Istanbul branch maps."""
-    executed_branches: set[tuple[int, int]] = set()
-    missing_branches: set[tuple[int, int]] = set()
+    executed_branches: set[tuple[int, int, str]] = set()
+    missing_branches: set[tuple[int, int, str]] = set()
     for branch_id, branch in branches.items():
         branch_line = int(branch.get("line") or branch.get("loc", {}).get("start", {}).get("line", 0))
         locations = branch.get("locations", [])
         hits = branch_hits.get(branch_id, [])
         for index, location in enumerate(locations):
             destination = int(location.get("start", {}).get("line", branch_line))
-            edge = (branch_line, destination)
+            edge = (branch_line, destination, f"{branch_id}:{index}")
             if index < len(hits) and int(hits[index]) > 0:
                 executed_branches.add(edge)
             else:
@@ -176,143 +195,6 @@ def _collect_branch_sets(
 
     missing_branches -= executed_branches
     return executed_branches, missing_branches
-
-
-def _parse_top_level_functions(source: str) -> list[SourceFunction]:
-    """Parse top-level function declarations from JS/TS source text."""
-    from teaforge.coverage.analyzer import SourceFunction
-
-    functions: list[SourceFunction] = []
-    import re
-
-    pattern = re.compile(r"(?:export\s+)?(?:async\s+)?function\s+(?P<name>[A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{")
-    for match in pattern.finditer(source):
-        open_brace = match.end() - 1
-        close_brace = _find_matching_brace(source, open_brace)
-        if close_brace == -1:
-            continue
-        functions.append(
-            SourceFunction(
-                name=match.group("name"),
-                lineno=_line_number_at(source, match.start()),
-                end_lineno=_line_number_at(source, close_brace),
-            )
-        )
-    return functions
-
-
-def _parse_arrow_functions(source: str) -> list[SourceFunction]:
-    """Parse top-level arrow-function variable declarations from JS/TS source text."""
-    from teaforge.coverage.analyzer import SourceFunction
-
-    functions: list[SourceFunction] = []
-    import re
-
-    pattern = re.compile(
-        r"(?:export\s+)?(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{"
-    )
-    for match in pattern.finditer(source):
-        open_brace = match.end() - 1
-        close_brace = _find_matching_brace(source, open_brace)
-        if close_brace == -1:
-            continue
-        functions.append(
-            SourceFunction(
-                name=match.group("name"),
-                lineno=_line_number_at(source, match.start()),
-                end_lineno=_line_number_at(source, close_brace),
-            )
-        )
-    return functions
-
-
-def _parse_class_methods(source: str) -> list[SourceFunction]:
-    """Parse class method declarations from JS/TS source text."""
-    from teaforge.coverage.analyzer import SourceFunction
-
-    methods: list[SourceFunction] = []
-    import re
-
-    class_pattern = re.compile(r"(?:export\s+)?class\s+(?P<name>[A-Za-z_$][\w$]*)[^\{]*\{")
-    method_pattern = re.compile(r"^\s*(?:async\s+)?(?P<name>[A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{", re.MULTILINE)
-    for class_match in class_pattern.finditer(source):
-        class_name = class_match.group("name")
-        class_open = class_match.end() - 1
-        class_close = _find_matching_brace(source, class_open)
-        if class_close == -1:
-            continue
-        body = source[class_open + 1 : class_close]
-        body_offset = class_open + 1
-        for method_match in method_pattern.finditer(body):
-            method_name = method_match.group("name")
-            if method_name == "constructor":
-                continue
-            method_start = body_offset + method_match.start()
-            method_open = body_offset + method_match.end() - 1
-            method_close = _find_matching_brace(source, method_open)
-            if method_close == -1 or method_close > class_close:
-                continue
-            methods.append(
-                SourceFunction(
-                    name=f"{class_name}.{method_name}",
-                    lineno=_line_number_at(source, method_start),
-                    end_lineno=_line_number_at(source, method_close),
-                )
-            )
-    return methods
-
-
-def _find_matching_brace(source: str, open_index: int) -> int:
-    """Find the matching closing brace in a JS/TS source block."""
-    depth = 0
-    cursor = open_index
-    while cursor < len(source):
-        char = source[cursor]
-        if char in {'"', "'", "`"}:
-            cursor = _skip_string_literal(source, cursor)
-            if cursor == -1:
-                return -1
-            continue
-        if source.startswith("//", cursor):
-            newline = source.find("\n", cursor)
-            if newline == -1:
-                return -1
-            cursor = newline + 1
-            continue
-        if source.startswith("/*", cursor):
-            end_comment = source.find("*/", cursor + 2)
-            if end_comment == -1:
-                return -1
-            cursor = end_comment + 2
-            continue
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return cursor
-        cursor += 1
-    return -1
-
-
-def _skip_string_literal(source: str, cursor: int) -> int:
-    """Skip past one string literal, returning the next cursor position."""
-    quote = source[cursor]
-    cursor += 1
-    while cursor < len(source):
-        char = source[cursor]
-        if char == "\\":
-            cursor += 2
-            continue
-        if char == quote:
-            return cursor + 1
-        cursor += 1
-    return -1
-
-
-def _line_number_at(source: str, index: int) -> int:
-    """Translate a character offset into a 1-based source line number."""
-    return source.count("\n", 0, index) + 1
 
 
 def _document_uses_test_file_as_source(document) -> bool:

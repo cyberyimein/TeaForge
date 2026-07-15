@@ -8,7 +8,8 @@ from dataclasses import replace
 from math import ceil
 from pathlib import Path
 
-from teaforge.naming import folder_name, slugify
+from teaforge.artifacts import write_text_atomic
+from teaforge.naming import slugify, source_folder_names
 
 from .backends import parse_documents_for_framework
 from .models import PCLDocument, PCLMatrixRow
@@ -23,31 +24,49 @@ def generate_pcl(
     json_output: Path | None = None,
     template_path: Path | None = None,
     framework: str = "pytest",
+    evidence_mode: str = "static",
+    runtime_timeout: int = 120,
 ) -> list[tuple[Path, Path]]:
     """Generate HTML and JSON outputs for each logical PCL document."""
     if not test_path.exists():
         raise FileNotFoundError(f"Input path does not exist: {test_path}")
 
-    documents = parse_documents_for_framework(test_path, framework)
+    documents = parse_documents_for_framework(
+        test_path,
+        framework,
+        evidence_mode=evidence_mode,
+        runtime_timeout=runtime_timeout,
+    )
     sheet_documents = _split_documents(documents, MAX_CASES_PER_SHEET)
     html_output.parent.mkdir(parents=True, exist_ok=True)
 
-    outputs: list[tuple[Path, Path]] = []
+    prepared_outputs: list[tuple[Path, Path, str, str]] = []
     multiple_outputs = len(sheet_documents) > 1
+    source_folders = source_folder_names(
+        Path(document.source_path) for document in sheet_documents
+    )
     for document in sheet_documents:
         html_path, json_path = _resolve_output_paths(
             document=document,
             base_html=html_output,
             base_json=json_output,
             multiple_outputs=multiple_outputs,
+            output_folder=source_folders[Path(document.source_path).resolve()],
         )
         html_content = render_pcl_html(document, template_path=template_path)
-        html_path.write_text(html_content, encoding="utf-8")
-        json_path.parent.mkdir(parents=True, exist_ok=True)
-        json_path.write_text(
-            json.dumps(document.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        json_content = json.dumps(
+            document.to_dict(),
+            ensure_ascii=False,
+            indent=2,
         )
+        prepared_outputs.append(
+            (html_path, json_path, html_content, json_content)
+        )
+
+    outputs: list[tuple[Path, Path]] = []
+    for html_path, json_path, html_content, json_content in prepared_outputs:
+        write_text_atomic(html_path, html_content)
+        write_text_atomic(json_path, json_content)
         outputs.append((html_path, json_path))
     return outputs
 
@@ -105,6 +124,11 @@ def _split_documents(documents: list[PCLDocument], chunk_size: int) -> list[PCLD
                     test_method=document.test_method,
                     test_source_path=document.test_source_path,
                     generated_at=document.generated_at,
+                    schema_version=document.schema_version,
+                    evidence_mode=document.evidence_mode,
+                    evidence_warnings=list(document.evidence_warnings),
+                    runtime_exit_code=document.runtime_exit_code,
+                    runtime_tests_passed=document.runtime_tests_passed,
                     sheet_number=sheet_number,
                     sheet_count=total_sheets,
                     testcases=[replace(case) for case in cases],
@@ -138,6 +162,7 @@ def _resolve_output_paths(
     base_html: Path,
     base_json: Path | None,
     multiple_outputs: bool,
+    output_folder: str,
 ) -> tuple[Path, Path]:
     """Resolve the HTML and JSON output paths for one generated PCL document."""
     # Multi-document runs are grouped by production file so one tested module owns one folder.
@@ -147,12 +172,12 @@ def _resolve_output_paths(
         json_path.parent.mkdir(parents=True, exist_ok=True)
         return html_path, json_path
 
-    output_dir = base_html.parent / folder_name(Path(document.file).stem)
+    output_dir = base_html.parent / output_folder
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = _build_output_suffix(document)
     html_path = output_dir / f"{base_html.stem}-{suffix}{base_html.suffix}"
     if base_json is not None:
-        json_dir = base_json.parent / folder_name(Path(document.file).stem)
+        json_dir = base_json.parent / output_folder
         json_dir.mkdir(parents=True, exist_ok=True)
         json_path = json_dir / f"{base_json.stem}-{suffix}{base_json.suffix}"
     else:
@@ -202,5 +227,14 @@ def _format_case_description(case) -> str:
         lines.append(f"遷移確認: {'; '.join(case.navigation_outputs)}")
     if getattr(case, "verification_mode", ""):
         lines.append(f"確認方法: {case.verification_mode}")
+    if getattr(case, "assertion_evidence", None):
+        lines.append(f"実行結果: {case.execution_status}")
+        for evidence in case.assertion_evidence:
+            expected = ", ".join(evidence.expected) or "(none)"
+            lines.append(
+                "実行証拠: "
+                f"{evidence.matcher} expected={expected} actual={evidence.actual} "
+                f"passed={str(evidence.passed).lower()}"
+            )
     lines.append(f"期待結果: {case.output}")
     return "\n".join(lines)

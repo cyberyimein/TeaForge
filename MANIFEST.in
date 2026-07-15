@@ -1,0 +1,13 @@
+include LICENSE
+include README.md
+include README_JP.md
+include CONTEXT.md
+include CHANGELOG.md
+recursive-include docs *.md
+recursive-include skill *.md
+recursive-include demo *.py *.md *.js *.cjs package.json package-lock.json
+recursive-include tests *.py *.ts *.toml
+recursive-include tools/render package.json package-lock.json
+recursive-include .github/workflows *.yml
+prune demo/jest_runtime/node_modules
+prune tools/render/node_modules

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
+from teaforge.artifacts import write_text_atomic
 from teaforge.naming import folder_name
+from teaforge.process import bounded_process_detail, run_process
 
 MERMAID_EXAMPLE = """flowchart TD
     A[Start] --> B{Input valid?}
@@ -28,6 +29,8 @@ _MERMAID_PREFIXES = (
     "mindmap",
     "timeline",
 )
+DIAGRAM_TYPES = ("flowchart", "sequence")
+DEFAULT_RENDER_TIMEOUT_SECONDS = 120
 
 
 def mmdc_install_message() -> str:
@@ -68,14 +71,56 @@ def validate_mermaid_with_renderer(code: str) -> str:
     return normalized
 
 
-def diagram_file_stem(source_path: Path, function_name: str) -> str:
+def detect_mermaid_diagram_type(code: str) -> str:
+    """Classify the Mermaid source into a report-supported diagram type."""
+    normalized = validate_mermaid(code)
+    first_line = next(line.strip() for line in normalized.splitlines() if line.strip())
+    if first_line.startswith("sequenceDiagram"):
+        return "sequence"
+    if first_line.startswith(("flowchart ", "graph ")):
+        return "flowchart"
+    raise ValueError(
+        "TeaForge reports currently support Mermaid flowcharts and sequence diagrams only."
+    )
+
+
+def normalize_diagram_type(diagram_type: str, code: str | None = None) -> str:
+    normalized = diagram_type.strip().lower()
+    if normalized == "auto":
+        if code is None:
+            raise ValueError("Mermaid code is required when diagram type is auto.")
+        return detect_mermaid_diagram_type(code)
+    if normalized not in DIAGRAM_TYPES:
+        raise ValueError(
+            f"Unsupported diagram type: {diagram_type}. Supported values: auto, "
+            + ", ".join(DIAGRAM_TYPES)
+        )
+    if code is not None and detect_mermaid_diagram_type(code) != normalized:
+        raise ValueError(
+            f"Mermaid source does not match --diagram-type {normalized}."
+        )
+    return normalized
+
+
+def diagram_file_stem(
+    source_path: Path,
+    function_name: str,
+    diagram_type: str = "flowchart",
+) -> str:
     """Keep Mermaid source and SVG names aligned with coverage report naming."""
-    return f"{folder_name(source_path.stem)}_{folder_name(function_name)}_coverage_report"
+    base = f"{folder_name(source_path.stem)}_{folder_name(function_name)}"
+    suffix = "sequence_diagram" if diagram_type == "sequence" else "coverage_report"
+    return f"{base}_{suffix}"
 
 
-def diagram_output_paths(diagram_dir: Path, source_path: Path, function_name: str) -> tuple[Path, Path]:
+def diagram_output_paths(
+    diagram_dir: Path,
+    source_path: Path,
+    function_name: str,
+    diagram_type: str = "flowchart",
+) -> tuple[Path, Path]:
     """Return the expected Mermaid source path and rendered SVG path for one function."""
-    stem = diagram_file_stem(source_path, function_name)
+    stem = diagram_file_stem(source_path, function_name, diagram_type)
     return diagram_dir / f"{stem}.mmd", diagram_dir / f"{stem}.svg"
 
 
@@ -85,12 +130,18 @@ def save_mermaid_diagram(
     source_path: Path,
     function_name: str,
     output_dir: Path,
+    diagram_type: str = "auto",
 ) -> Path:
     """Persist validated Mermaid text as the source-of-truth diagram artifact."""
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Tested source file does not exist: {source_path}")
+    resolved_type = normalize_diagram_type(diagram_type, code)
     normalized = validate_mermaid_with_renderer(code)
     output_dir.mkdir(parents=True, exist_ok=True)
-    mmd_path, _ = diagram_output_paths(output_dir, source_path, function_name)
-    mmd_path.write_text(normalized, encoding="utf-8")
+    mmd_path, _ = diagram_output_paths(
+        output_dir, source_path, function_name, resolved_type
+    )
+    write_text_atomic(mmd_path, normalized)
     return mmd_path
 
 
@@ -107,14 +158,14 @@ def _run_mmdc(mmd_path: Path, svg_path: Path) -> None:
         raise RuntimeError(mmdc_install_message())
 
     svg_path.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
+    result = run_process(
         [renderer, "-i", str(mmd_path), "-o", str(svg_path), "-b", "transparent"],
-        capture_output=True,
-        text=True,
-        check=False,
+        operation=f"Mermaid rendering for {mmd_path.name}",
+        timeout_seconds=DEFAULT_RENDER_TIMEOUT_SECONDS,
     )
+
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
+        detail = bounded_process_detail(result.stderr, result.stdout)
         if "Parse error" in detail:
             raise ValueError(
                 "Invalid Mermaid syntax. Please fix the diagram and try again.\n"

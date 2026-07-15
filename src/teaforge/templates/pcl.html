@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" href="data:," />
+  <title>{{ document.title }}</title>
+  <style>
+    @page {
+      size: A4 landscape;
+      margin: 10mm;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+      color: #111111;
+      background: #ffffff;
+    }
+
+    .page {
+      width: 277mm;
+      min-height: 190mm;
+      margin: 0 auto;
+      box-sizing: border-box;
+      padding: 10px;
+    }
+
+    .title-block {
+      background: #002fa7;
+      color: #ffffff;
+      border: 1px solid #001f70;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      position: relative;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.04em;
+    }
+
+    .generator-badge {
+      position: absolute;
+      right: 14px;
+      bottom: 8px;
+      font-size: 10px;
+      opacity: 0.95;
+    }
+
+    .meta-table,
+    .case-table,
+    .decision-table,
+    .manual-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 8px;
+    }
+
+    .meta-table th,
+    .meta-table td,
+    .case-table th,
+    .case-table td,
+    .decision-table th,
+    .decision-table td,
+    .manual-table th,
+    .manual-table td {
+      border: 1px solid #222222;
+      padding: 4px 6px;
+      font-size: 11px;
+      line-height: 1.25;
+      vertical-align: middle;
+    }
+
+    .meta-table th,
+    .case-table thead th,
+    .manual-table th,
+    .decision-table thead th {
+      background: #dbeafe;
+      font-weight: 700;
+    }
+
+    .meta-table th,
+    .manual-table th {
+      width: 110px;
+      text-align: left;
+    }
+
+    .frontend-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 8px;
+      table-layout: fixed;
+    }
+
+    .frontend-table th,
+    .frontend-table td {
+      border: 1px solid #222222;
+      padding: 4px 6px;
+      font-size: 11px;
+      line-height: 1.35;
+      vertical-align: top;
+      word-break: break-word;
+    }
+
+    .frontend-table th {
+      background: #e7eefc;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    .frontend-list {
+      margin: 0;
+      padding-left: 16px;
+    }
+
+    .frontend-chip {
+      display: inline-block;
+      background: #dbeafe;
+      border: 1px solid #9db7f5;
+      border-radius: 999px;
+      padding: 1px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #002fa7;
+    }
+
+    .runtime-pass {
+      color: #166534;
+      font-weight: 700;
+    }
+
+    .runtime-fail {
+      color: #b91c1c;
+      font-weight: 700;
+    }
+
+    .section-title {
+      margin: 8px 0 4px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #002fa7;
+    }
+
+    .case-table .type-col,
+    .decision-table .case-head {
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .decision-table {
+      table-layout: fixed;
+    }
+
+    .decision-table .label-head {
+      text-align: left;
+    }
+
+    .decision-table .section-cell {
+      width: 44px;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .decision-table .section-input,
+    .decision-table .item-input,
+    .decision-table .value-input,
+    .decision-table .mark-input {
+      background: #f7d6b4;
+    }
+
+    .decision-table .section-output,
+    .decision-table .item-output,
+    .decision-table .value-output,
+    .decision-table .mark-output {
+      background: #d8e6b7;
+    }
+
+    .decision-table .item-cell {
+      width: 86px;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .decision-table .value-cell {
+      width: 176px;
+      word-break: break-word;
+    }
+
+    .decision-table .case-head {
+      width: 24px;
+      padding: 3px 0;
+      font-size: 10px;
+    }
+
+    .decision-table .mark-cell {
+      width: 24px;
+      padding: 2px 0;
+      text-align: center;
+      font-size: 14px;
+      color: #111111;
+      font-weight: 700;
+    }
+
+    .manual-table td {
+      height: 22px;
+    }
+
+    .footer {
+      margin-top: 6px;
+      padding-top: 4px;
+      border-top: 1px solid #002fa7;
+      text-align: right;
+      font-size: 10px;
+      color: #002fa7;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <div class="title-block">
+      <h1>{{ document.title }}</h1>
+      <div class="generator-badge">Design by TeaForge.🍵</div>
+    </div>
+
+    <table class="meta-table">
+      <tbody>
+        <tr>
+          <th>対象ファイル</th>
+          <td>{{ document.file }}</td>
+          <th>対象メソッド</th>
+          <td>{{ document.method }}</td>
+        </tr>
+        <tr>
+          <th>生成元</th>
+          <td>{{ document.source_path }}</td>
+          <th>シート</th>
+          <td>{{ document.sheet_number }} / {{ document.sheet_count }}</td>
+        </tr>
+        <tr>
+          <th>生成日時</th>
+          <td colspan="3">{{ document.generated_at }}</td>
+        </tr>
+        <tr>
+          <th>証拠モード</th>
+          <td>{{ document.evidence_mode }}</td>
+          <th>警告</th>
+          <td>{{ document.evidence_warnings|join("; ") }}</td>
+        </tr>
+        {% if document.runtime_exit_code is not none %}
+        <tr>
+          <th>Jest 終了コード</th>
+          <td>{{ document.runtime_exit_code }}</td>
+          <th>テスト実行</th>
+          <td>{% if document.runtime_tests_passed %}PASS{% else %}FAIL{% endif %}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <div class="section-title">テストケース一覧</div>
+    <table class="case-table">
+      <thead>
+        <tr>
+          <th style="width: 42px;">番号</th>
+          <th style="width: 88px;">コード</th>
+          <th style="width: 46px;">区分</th>
+          <th>テストケース</th>
+          <th>テスト名</th>
+          <th style="width: 82px;">実施日</th>
+          <th style="width: 82px;">Bug No.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for case in case_columns %}
+        <tr>
+          <td>{{ case.index }}</td>
+          <td>{{ case.testcasecode }}</td>
+          <td class="type-col">{{ case.type }}</td>
+          <td>{{ case.testcase }}</td>
+          <td>{{ case.testname }}</td>
+          <td>{{ case.executed_date }}</td>
+          <td>{{ case.bug_number }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if runtime_cases %}
+    <div class="section-title">Jest 実行証拠</div>
+    <table class="frontend-table">
+      <thead>
+        <tr>
+          <th style="width: 82px;">コード</th>
+          <th>実行テスト名</th>
+          <th style="width: 90px;">状態</th>
+          <th style="width: 120px;">Matcher</th>
+          <th>期待値</th>
+          <th>実際値</th>
+          <th>エラー</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for case in runtime_cases %}
+        {% for evidence in case.assertion_evidence %}
+        <tr>
+          <td>{{ case.testcasecode }}</td>
+          <td>{{ case.runtime_test_name }}</td>
+          <td class="{% if evidence.passed %}runtime-pass{% else %}runtime-fail{% endif %}">
+            {% if evidence.passed %}PASS{% else %}FAIL{% endif %}
+          </td>
+          <td>{% if evidence.negated %}not.{% endif %}{{ evidence.matcher }}</td>
+          <td>{{ evidence.expected|join(", ") }}</td>
+          <td>{{ evidence.actual }}</td>
+          <td>{{ evidence.error }}</td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if frontend_cases %}
+    <div class="section-title">前端ページUT補足</div>
+    <table class="frontend-table">
+      <thead>
+        <tr>
+          <th style="width: 52px;">番号</th>
+          <th style="width: 88px;">コード</th>
+          <th style="width: 120px;">画面名</th>
+          <th style="width: 150px;">入口URL</th>
+          <th style="width: 120px;">確認方法</th>
+          <th>前提条件</th>
+          <th>操作入力</th>
+          <th>画面出力</th>
+          <th>遷移出力</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for case in frontend_cases %}
+        <tr>
+          <td>{{ case.index }}</td>
+          <td>{{ case.testcasecode }}</td>
+          <td>{{ case.screen_name }}</td>
+          <td>{{ case.entry_url }}</td>
+          <td>{% if case.verification_mode %}<span class="frontend-chip">{{ case.verification_mode }}</span>{% endif %}</td>
+          <td>
+            {% if case.preconditions %}
+            <ul class="frontend-list">
+              {% for item in case.preconditions %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </td>
+          <td>
+            {% if case.input_actions %}
+            <ul class="frontend-list">
+              {% for item in case.input_actions %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </td>
+          <td>
+            {% if case.ui_outputs %}
+            <ul class="frontend-list">
+              {% for item in case.ui_outputs %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </td>
+          <td>
+            {% if case.navigation_outputs %}
+            <ul class="frontend-list">
+              {% for item in case.navigation_outputs %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <div class="section-title">判定表</div>
+    <table class="decision-table">
+      <thead>
+        <tr>
+          <th class="label-head" colspan="3">テスト項目番号</th>
+          {% for case in decision_columns %}
+          <th class="case-head">{{ loop.index }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in input_rows %}
+        <tr>
+          {% if loop.first %}
+          <td class="section-cell section-input" rowspan="{{ input_rows|length }}">条件</td>
+          {% endif %}
+          {% if row.show_item %}
+          <td class="item-cell item-input" rowspan="{{ row.item_rowspan }}">{{ row.item }}</td>
+          {% endif %}
+          <td class="value-cell value-input">{{ row.value }}</td>
+          {% for case in decision_columns %}
+          <td class="mark-cell mark-input">{% if case and row["values"].get(case.testcasecode) %}◯{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+
+        {% for row in output_rows %}
+        <tr>
+          {% if loop.first %}
+          <td class="section-cell section-output" rowspan="{{ output_rows|length }}">結果</td>
+          {% endif %}
+          {% if row.show_item %}
+          <td class="item-cell item-output" rowspan="{{ row.item_rowspan }}">{{ row.item }}</td>
+          {% endif %}
+          <td class="value-cell value-output">{{ row.value }}</td>
+          {% for case in decision_columns %}
+          <td class="mark-cell mark-output">{% if case and row["values"].get(case.testcasecode) %}◯{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="section-title">記入欄</div>
+    <table class="manual-table">
+      <tbody>
+        <tr>
+          <th>実施日</th>
+          <td></td>
+          <th>担当者</th>
+          <td></td>
+        </tr>
+        <tr>
+          <th>レビュー</th>
+          <td></td>
+          <th>備考</th>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="footer">Your AI agent generated this PCL using TeaForge. Now it’s tea time! 🍵</div>
+  </div>
+
+  <script id="teaforge-pcl-data" type="application/json">
+{{ embedded_json | safe }}
+  </script>
+</body>
+
+</html>

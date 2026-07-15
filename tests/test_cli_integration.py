@@ -1,10 +1,25 @@
+import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
+from teaforge import __version__
 from teaforge.cli import app
+from teaforge.coverage.service import (
+    CoverageThresholdError,
+    CoverageThresholdViolation,
+)
+from teaforge.pcl.models import PCLDocument
 
 runner = CliRunner()
+
+
+def test_version_option_matches_package_version():
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == __version__
 
 
 def test_generate_and_get_commands(tmp_path):
@@ -170,3 +185,141 @@ def test_generate_pcl_rejects_unknown_framework(tmp_path):
 
     assert result.exit_code == 1
     assert "Unsupported framework: unknown" in result.stderr
+
+
+def test_generate_pcl_reports_missing_custom_template_without_traceback(tmp_path):
+    missing_template = tmp_path / "missing-template.html"
+
+    result = runner.invoke(
+        app,
+        [
+            "pcl",
+            "generate",
+            "--path",
+            "tests/fixtures/test_sample_pytest.py",
+            "--output",
+            str(tmp_path / "pcl.html"),
+            "--template",
+            str(missing_template),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "PCL template does not exist" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_runtime_report_returns_distinct_exit_code_when_jest_tests_failed(
+    tmp_path, monkeypatch
+):
+    html_path = tmp_path / "pcl.html"
+    json_path = tmp_path / "pcl.json"
+    document = PCLDocument.create(
+        file="user.js",
+        method="createUser",
+        source_path="src/user.js",
+    )
+    document.evidence_mode = "runtime"
+    document.runtime_exit_code = 1
+    document.runtime_tests_passed = False
+    html_path.write_text("<html></html>", encoding="utf-8")
+    json_path.write_text(
+        json.dumps(document.to_dict(), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "teaforge.cli.generate_pcl",
+        lambda **kwargs: [(html_path, json_path)],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "pcl",
+            "generate",
+            "--framework",
+            "jest",
+            "--evidence-mode",
+            "runtime",
+            "--path",
+            "tests/fixtures/test_sample_jest.test.ts",
+            "--output",
+            str(html_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Reports were generated with failure evidence" in result.stderr
+
+    accepted = runner.invoke(
+        app,
+        [
+            "pcl",
+            "generate",
+            "--framework",
+            "jest",
+            "--evidence-mode",
+            "runtime",
+            "--allow-test-failures",
+            "--path",
+            "tests/fixtures/test_sample_jest.test.ts",
+            "--output",
+            str(html_path),
+        ],
+    )
+
+    assert accepted.exit_code == 0
+
+
+def test_pcl_document_rejects_unknown_future_schema():
+    document = PCLDocument.create(
+        file="user.py",
+        method="create_user",
+        source_path="src/user.py",
+    )
+    payload = document.to_dict()
+    payload["schema_version"] = 999
+
+    with pytest.raises(ValueError, match="Unsupported PCL schema version: 999"):
+        PCLDocument.from_dict(payload)
+
+
+def test_coverage_gate_preserves_report_and_returns_exit_code_three(
+    tmp_path, monkeypatch
+):
+    output = tmp_path / "coverage.html"
+    output.write_text("<html>coverage report</html>", encoding="utf-8")
+
+    def fail_gate(**_kwargs):
+        raise CoverageThresholdError(
+            [output],
+            [
+                CoverageThresholdViolation(
+                    output_path=output,
+                    metric="C1",
+                    actual=75.0,
+                    required=100.0,
+                )
+            ],
+        )
+
+    monkeypatch.setattr("teaforge.cli.generate_coverage_reports", fail_gate)
+
+    result = runner.invoke(
+        app,
+        [
+            "coverage",
+            "generate",
+            "--path",
+            "demo/fastapi_crud/tests",
+            "--output",
+            str(output),
+            "--min-c1",
+            "100",
+        ],
+    )
+
+    assert result.exit_code == 3
+    assert output.exists()
+    assert f"Generated coverage HTML: {output}" in result.stdout
+    assert "C1 75.0% is below the required 100.0%" in result.stderr
