@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 NORMAL_HINTS = ("normal", "success", "valid", "ok", "happy")
 BOUNDARY_HINTS = ("boundary", "edge", "limit", "min", "max", "minlength", "maxlength")
 EXCEPTION_HINTS = (

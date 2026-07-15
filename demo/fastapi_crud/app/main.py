@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="TeaForge Demo CRUD")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="TeaForge Demo CRUD", lifespan=_lifespan)
 
 
 class ItemCreate(BaseModel):
@@ -51,11 +59,6 @@ def init_db() -> None:
             """
         )
         conn.commit()
-
-
-@app.on_event("startup")
-def _on_startup() -> None:
-    init_db()
 
 
 @app.post("/items", response_model=ItemOut)
@@ -126,4 +129,3 @@ def delete_item(item_id: int) -> dict[str, str]:
         conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
         conn.commit()
     return {"status": "deleted"}
-

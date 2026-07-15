@@ -69,3 +69,18 @@ def test_parse_demo_pytest_uses_tested_code_file_and_method():
     assert len(update_document.testcases) == 9
     assert len(get_document.testcases) == 2
     assert len(delete_document.testcases) == 2
+
+
+def test_parse_pytest_resolves_project_imports_outside_process_cwd(tmp_path, monkeypatch):
+    sample = Path("demo/fastapi_crud/tests/test_items.py").resolve()
+    monkeypatch.chdir(tmp_path)
+
+    documents = parse_pytest_documents(sample)
+
+    assert {document.method for document in documents} == {
+        "create_item",
+        "update_item",
+        "get_item",
+        "delete_item",
+    }
+    assert all(document.file == "main.py" for document in documents)

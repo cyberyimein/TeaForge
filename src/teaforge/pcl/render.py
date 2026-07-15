@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import json
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from teaforge.artifacts import json_for_html_script
 
 from .models import PCLDocument
 
@@ -15,19 +17,28 @@ CASE_SLOTS_PER_SHEET = 25
 
 def default_template_path() -> Path:
     """Return the built-in PCL template path."""
-    return Path(__file__).resolve().parents[3] / "templates" / "pcl.html"
+    return Path(str(resources.files("teaforge.templates").joinpath("pcl.html")))
 
 
 def render_pcl_html(document: PCLDocument, template_path: Path | None = None) -> str:
     """Render one PCL document and embed its JSON payload for later lookup."""
-    template_file = template_path or default_template_path()
-    env = Environment(
-        loader=FileSystemLoader(str(template_file.parent)),
-        autoescape=select_autoescape(["html", "xml"]),
-    )
-    template = env.get_template(template_file.name)
+    if template_path is None:
+        env = Environment(autoescape=select_autoescape(["html", "xml"]))
+        template = env.from_string(
+            resources.files("teaforge.templates")
+            .joinpath("pcl.html")
+            .read_text(encoding="utf-8")
+        )
+    else:
+        if not template_path.is_file():
+            raise FileNotFoundError(f"PCL template does not exist: {template_path}")
+        env = Environment(
+            loader=FileSystemLoader(str(template_path.parent)),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
+        template = env.get_template(template_path.name)
     payload = document.to_dict()
-    embedded_json = json.dumps(payload, ensure_ascii=False, indent=2)
+    embedded_json = json_for_html_script(payload)
     case_columns = [
         {
             "index": index,
@@ -42,6 +53,11 @@ def render_pcl_html(document: PCLDocument, template_path: Path | None = None) ->
             "ui_outputs": case.get("ui_outputs", []),
             "navigation_outputs": case.get("navigation_outputs", []),
             "verification_mode": case.get("verification_mode", ""),
+            "test_full_name": case.get("test_full_name", ""),
+            "assertion_evidence": case.get("assertion_evidence", []),
+            "execution_status": case.get("execution_status", ""),
+            "runtime_test_name": case.get("runtime_test_name", ""),
+            "runtime_test_path": case.get("runtime_test_path", ""),
             "executed_date": case.get("executed_date", ""),
             "bug_number": case.get("bug_number", ""),
         }
@@ -64,6 +80,7 @@ def render_pcl_html(document: PCLDocument, template_path: Path | None = None) ->
         or case["navigation_outputs"]
         or case["verification_mode"]
     ]
+    runtime_cases = [case for case in case_columns if case["assertion_evidence"]]
     return template.render(
         document=payload,
         embedded_json=embedded_json,
@@ -72,6 +89,7 @@ def render_pcl_html(document: PCLDocument, template_path: Path | None = None) ->
         input_rows=input_rows,
         output_rows=output_rows,
         frontend_cases=frontend_cases,
+        runtime_cases=runtime_cases,
     )
 
 

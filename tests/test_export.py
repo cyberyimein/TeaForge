@@ -8,6 +8,22 @@ from teaforge.cli import app
 runner = CliRunner()
 
 
+def test_export_command_reports_missing_input_before_loading_pdf_dependency(tmp_path):
+    result = runner.invoke(
+        app,
+        [
+            "export",
+            "--path",
+            str(tmp_path / "missing.html"),
+            "--output",
+            str(tmp_path / "report.pdf"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Input HTML does not exist" in result.stderr
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("weasyprint") is None,
     reason="weasyprint is not installed",

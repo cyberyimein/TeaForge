@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+COVERAGE_SCHEMA_VERSION = 2
+
 
 @dataclass(slots=True)
 class CoverageMetric:
@@ -13,6 +15,19 @@ class CoverageMetric:
     total: int
     percent: float
     missing: int = 0
+    applicable: bool = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.applicable = self.total > 0
+
+
+@dataclass(slots=True)
+class DiagramArtifact:
+    kind: str
+    page_number: int
+    mermaid_path: str
+    svg_path: str
+    svg_data_uri: str
 
 
 @dataclass(slots=True)
@@ -29,6 +44,7 @@ class FunctionCoverage:
     mermaid_path: str = ""
     svg_path: str = ""
     svg_data_uri: str = ""
+    diagrams: list[DiagramArtifact] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -41,6 +57,10 @@ class CoverageDocument:
     page_count: int
     c0: CoverageMetric
     c1: CoverageMetric
+    evidence_source: str
+    c0_definition: str
+    c1_definition: str
+    schema_version: int = COVERAGE_SCHEMA_VERSION
     requested_functions: list[str] = field(default_factory=list)
     functions: list[FunctionCoverage] = field(default_factory=list)
 
@@ -55,17 +75,29 @@ class CoverageDocument:
         c1: CoverageMetric,
         requested_functions: list[str],
         functions: list[FunctionCoverage],
+        evidence_source: str,
+        c0_definition: str,
+        c1_definition: str,
     ) -> "CoverageDocument":
-        """Create a report document with a stable page count for summary and flowchart pages."""
+        """Create a report document with a stable page count for summary and diagram pages."""
+        diagram_pages = sum(len(function.diagrams) for function in functions)
+        if diagram_pages == 0:
+            diagram_pages = sum(
+                1 for function in functions if function.page_number is not None
+            )
         return cls(
             title="Coverage Report",
             file=file,
             source_path=source_path,
             test_path=test_path,
             generated_at=datetime.now(UTC).isoformat(),
-            page_count=max(1, 1 + sum(1 for function in functions if function.page_number is not None)),
+            page_count=max(1, 1 + diagram_pages),
             c0=c0,
             c1=c1,
+            evidence_source=evidence_source,
+            c0_definition=c0_definition,
+            c1_definition=c1_definition,
+            schema_version=COVERAGE_SCHEMA_VERSION,
             requested_functions=requested_functions,
             functions=functions,
         )

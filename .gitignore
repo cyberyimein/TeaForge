@@ -1,11 +1,15 @@
 .pytest_cache/
 .ruff_cache/
+.coverage
+.coverage.*
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .DS_Store
 .venv/
+node_modules/
+.playwright-cli/
 dist/
 build/
 *.egg-info/
@@ -14,6 +18,16 @@ demo/fastapi_crud/*.db
 *.html
 *.json
 
+# The executable Jest integration fixture must remain reproducible.
+!demo/jest_runtime/package.json
+!demo/jest_runtime/package-lock.json
+!tools/render/package.json
+!tools/render/package-lock.json
+!tools/render/puppeteer-ci.json
+
+# Report templates are source files, not generated output.
+!src/teaforge/templates/*.html
+
 # Ignore all files under output/ but keep the directory with a .gitkeep
 output/*
 !output/.gitkeep
@@ -21,4 +35,3 @@ output/*
 # Internal development docs
 STEP*.md
 DESIGN.md
-

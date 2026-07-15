@@ -1,7 +1,8 @@
-from .models import PCLDocument, PCLMatrixRow, PCLTestCase
+from .models import PCLAssertionEvidence, PCLDocument, PCLMatrixRow, PCLTestCase
 from .service import generate_pcl, get_testcase_description, load_pcl_document
 
 __all__ = [
+    "PCLAssertionEvidence",
     "PCLDocument",
     "PCLMatrixRow",
     "PCLTestCase",
@@ -9,4 +10,3 @@ __all__ = [
     "load_pcl_document",
     "get_testcase_description",
 ]
-

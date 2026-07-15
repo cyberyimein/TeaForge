@@ -5,13 +5,16 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from teaforge.pcl.backends import normalize_pcl_framework, parse_documents_for_framework
+from teaforge.process import WorkflowDeadline, bounded_process_detail, run_process
+
+CoverageBranch = tuple[int, int] | tuple[int, int, str]
+PYTEST_PROJECT_MARKERS = ("pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini")
 
 
 @dataclass(slots=True)
@@ -30,8 +33,8 @@ class SourceCoverageSnapshot:
     c1_total: int
     executed_lines: set[int]
     missing_lines: set[int]
-    executed_branches: set[tuple[int, int]]
-    missing_branches: set[tuple[int, int]]
+    executed_branches: set[CoverageBranch]
+    missing_branches: set[CoverageBranch]
 
 
 def discover_source_files(test_path: Path, framework: str = "pytest") -> list[Path]:
@@ -114,64 +117,93 @@ def analyze_coverage(
     test_path: Path,
     source_paths: list[Path],
     framework: str = "pytest",
+    *,
+    timeout_seconds: int = 120,
+    python_executable: Path | None = None,
 ) -> dict[Path, SourceCoverageSnapshot]:
     """Run the selected test framework and map coverage payloads back to each source file."""
     normalized = normalize_pcl_framework(framework)
     if normalized == "jest":
         from teaforge.jest.coverage import analyze_jest_coverage
 
-        return analyze_jest_coverage(test_path, source_paths)
+        return analyze_jest_coverage(
+            test_path, source_paths, timeout_seconds=timeout_seconds
+        )
     if normalized == "angular":
         from teaforge.angular.coverage import analyze_angular_coverage
 
-        return analyze_angular_coverage(test_path, source_paths)
+        return analyze_angular_coverage(
+            test_path, source_paths, timeout_seconds=timeout_seconds
+        )
     if normalized == "playwright":
         raise ValueError("Coverage reports do not support framework: playwright")
 
-    return _analyze_pytest_coverage(test_path, source_paths)
+    selected_python = (python_executable or Path(sys.executable)).expanduser().absolute()
+    if not selected_python.is_file():
+        raise FileNotFoundError(
+            f"Python executable does not exist: {selected_python}"
+        )
+    return _analyze_pytest_coverage(
+        test_path,
+        source_paths,
+        timeout_seconds=timeout_seconds,
+        python_executable=selected_python,
+    )
 
 
 def _analyze_pytest_coverage(
     pytest_path: Path,
     source_paths: list[Path],
+    *,
+    timeout_seconds: int,
+    python_executable: Path,
 ) -> dict[Path, SourceCoverageSnapshot]:
     """Run pytest through coverage.py and map the JSON payload back to each source file."""
     _ensure_runtime_dependencies()
 
     resolved_pytest_path = pytest_path.resolve()
     resolved_sources = [path.resolve() for path in source_paths]
+    source_roots = ",".join(
+        dict.fromkeys(str(path.parent) for path in resolved_sources)
+    )
+    project_root = discover_pytest_project_root(resolved_pytest_path)
+    deadline = WorkflowDeadline.start(
+        "pytest coverage workflow",
+        timeout_seconds,
+    )
     with tempfile.TemporaryDirectory(prefix="teaforge-coverage-") as temp_dir:
         temp_root = Path(temp_dir)
         data_file = temp_root / ".coverage"
         json_output = temp_root / "coverage.json"
 
-        run_result = subprocess.run(
+        run_result = run_process(
             [
-                sys.executable,
+                str(python_executable),
                 "-m",
                 "coverage",
                 "run",
                 "--branch",
+                f"--source={source_roots}",
                 f"--data-file={data_file}",
                 "-m",
                 "pytest",
                 str(resolved_pytest_path),
             ],
-            capture_output=True,
-            text=True,
-            check=False,
+            operation="pytest coverage collection",
+            timeout_seconds=deadline.remaining_seconds(),
+            cwd=project_root,
         )
         if run_result.returncode != 0:
-            detail = (run_result.stderr or run_result.stdout).strip()
+            detail = bounded_process_detail(run_result.stderr, run_result.stdout)
             raise RuntimeError(
                 "pytest failed while collecting coverage data. "
                 f"Exit code: {run_result.returncode}. {detail}"
             )
 
-        include_arg = ",".join(str(path) for path in resolved_sources)
-        json_result = subprocess.run(
+        include_arg = _coverage_include_argument(resolved_sources, project_root)
+        json_result = run_process(
             [
-                sys.executable,
+                str(python_executable),
                 "-m",
                 "coverage",
                 "json",
@@ -180,19 +212,49 @@ def _analyze_pytest_coverage(
                 str(json_output),
                 f"--include={include_arg}",
             ],
-            capture_output=True,
-            text=True,
-            check=False,
+            operation="coverage.py JSON export",
+            timeout_seconds=deadline.remaining_seconds(),
+            cwd=project_root,
         )
         if json_result.returncode != 0:
-            detail = (json_result.stderr or json_result.stdout).strip()
+            detail = bounded_process_detail(json_result.stderr, json_result.stdout)
             raise RuntimeError(
                 "coverage.py failed to export JSON data. "
                 f"Exit code: {json_result.returncode}. {detail}"
             )
 
         payload = json.loads(json_output.read_text(encoding="utf-8"))
-    return _extract_snapshots(payload, resolved_sources)
+    return _extract_snapshots(
+        payload,
+        resolved_sources,
+        project_root=project_root,
+    )
+
+
+def discover_pytest_project_root(test_path: Path) -> Path:
+    """Find the nearest pytest configuration root, with a local-path fallback."""
+    resolved = test_path.expanduser().resolve()
+    start = resolved if resolved.is_dir() else resolved.parent
+    for candidate in (start, *start.parents):
+        if any((candidate / marker).is_file() for marker in PYTEST_PROJECT_MARKERS):
+            return candidate
+    return start
+
+
+def _coverage_include_argument(source_paths: list[Path], project_root: Path) -> str:
+    """Match coverage.py data whether it stores absolute or project-relative names."""
+    patterns: list[str] = []
+    for source_path in source_paths:
+        absolute = str(source_path)
+        if absolute not in patterns:
+            patterns.append(absolute)
+        try:
+            relative = str(source_path.relative_to(project_root))
+        except ValueError:
+            continue
+        if relative not in patterns:
+            patterns.append(relative)
+    return ",".join(patterns)
 
 
 def _ensure_runtime_dependencies() -> None:
@@ -210,11 +272,14 @@ def _ensure_runtime_dependencies() -> None:
 def _extract_snapshots(
     payload: dict,
     source_paths: list[Path],
+    *,
+    project_root: Path | None = None,
 ) -> dict[Path, SourceCoverageSnapshot]:
     """Convert coverage.json payloads into per-source snapshot dataclasses."""
-    # coverage.py may emit relative paths; resolving them once keeps matching deterministic.
+    # coverage.py commonly emits paths relative to the target project's execution root.
+    resolution_root = (project_root or Path.cwd()).resolve()
     file_entries = {
-        Path(file_name).resolve(): file_payload
+        _resolve_coverage_entry_path(file_name, resolution_root): file_payload
         for file_name, file_payload in payload.get("files", {}).items()
     }
 
@@ -242,6 +307,13 @@ def _extract_snapshots(
             missing_branches=missing_branches,
         )
     return snapshots
+
+
+def _resolve_coverage_entry_path(file_name: str, project_root: Path) -> Path:
+    candidate = Path(file_name)
+    if not candidate.is_absolute():
+        candidate = project_root / candidate
+    return candidate.resolve()
 
 
 def _match_file_payload(file_entries: dict[Path, dict], source_path: Path) -> dict:

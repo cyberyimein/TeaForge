@@ -1,273 +1,272 @@
 # TeaForge
 
-TeaForge は、自動テストを日本式の単体テストドキュメント（PCL, Program Check List）へ変換し、Mermaid フローチャート付きのカバレッジレポートを生成します。
+[![CI](https://github.com/cyberyimein/TeaForge/actions/workflows/ci.yml/badge.svg)](https://github.com/cyberyimein/TeaForge/actions/workflows/ci.yml)
 
-このプロジェクトは、単に人間が手動で使うためのコマンドラインツールではありません。主な利用シナリオは AI エージェントとの協調です。`skill/SKILL.md` には、TeaForge の機能、CLI インターフェース、利用境界、フローチャート生成ルールなどの知識がまとめられています。GitHub Copilot や Claude Code のようなエージェントは、この skill を読み込むことで、TeaForge をいつ呼び出すべきか、どの引数を渡すべきか、失敗した呼び出しをどう修正すべきかを理解できます。これにより、テスト生成、ドキュメント生成、カバレッジレポート生成の信頼性が向上します。
+TeaForge は、自動テストから監査可能な日本式単体テスト仕様書（PCL, Program Check List）と、Mermaid のフローチャート／シーケンス図を含むファイル単位カバレッジレポートを生成します。
 
-現在実装済みの機能:
+エンジニアとコーディングエージェントの両方を対象にしています。付属の [`skill/SKILL.md`](skill/SKILL.md) には、対応ワークフロー、コマンド境界、作図ルールを記載しています。
 
-- `pytest` テスト解析
-- `jest` / `TypeScript` テスト解析
-- `JSON + HTML` での PCL 生成
-- HTML の PDF 出力（WeasyPrint）
-- 個別テストケース説明の CLI 参照
-- ファイル単位の複数ページ対応カバレッジレポート（C0 / C1 + Mermaid SVG）
+## 主な機能
 
-## ディレクトリ構成
-
-```text
-TeaForge/
-  src/teaforge/            # コア実装と CLI
-  templates/               # PCL HTML テンプレート
-  demo/fastapi_crud/       # 内部用 FastAPI + SQLite + pytest デモ
-  tests/fixtures/jest_sample/ # 最小構成の Jest / TypeScript フィクスチャ
-  output/                  # ローカル HTML / JSON / PDF 出力先
-  tests/                   # TeaForge 自身のテストスイート
-  skill/                   # Skill ファイル
-  project.md               # プロジェクト目標の説明
-  Step1.md                 # フェーズ 1 要件
-```
+- `pytest`、Jest/TypeScript、Angular/Jest、Playwright のテストを PCL に変換
+- Jest の実行時 matcher 証拠（期待値、実際値、matcher、成否、`.not`、Promise、例外）を取得
+- バージョン付き PCL を JSON と HTML の組として生成
+- Python coverage または Jest/Istanbul `coverage-final.json` からファイル単位 C0/C1 レポートを生成
+- カバレッジレポートに型付き Mermaid フローチャート／シーケンス図ページを追加
+- 任意依存の WeasyPrint による PDF 出力
+- `doctor` によるパッケージと対象プロジェクトの機械可読な事前診断
 
 ## インストール
 
-### macOS / Linux
+Python 3.11 以降が必要です。
+
+macOS / Linux:
 
 ```bash
+git clone https://github.com/cyberyimein/TeaForge.git
+cd TeaForge
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev,pdf]"
+python -m pip install .
 ```
 
-### Windows
+Windows PowerShell:
 
 ```powershell
+git clone https://github.com/cyberyimein/TeaForge.git
+cd TeaForge
 py -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -e ".[dev,pdf]"
+python -m pip install .
 ```
 
-## Node / Jest の前提条件
-
-`jest` / `TypeScript` の PCL またはカバレッジ機能を使う場合は、ローカルの Node.js 環境も必要です。
-
-### 必要ツール
-
-- `node`
-- `npx`
-- プロジェクトローカルの `jest` 実行ファイル
-
-### カバレッジ要件
-
-`teaforge coverage generate --framework jest` は、Jest が生成する Istanbul 形式の `coverage-final.json` に依存します。
-
-TeaForge は現在、次のコマンドを呼び出します:
+PDF が必要な場合だけ追加依存を入れます。
 
 ```bash
-npx jest --coverage --coverageReporters=json --coverageDirectory <temp-dir> --runInBand <test-path>
+python -m pip install ".[pdf]"
 ```
 
-### Mermaid 要件
+開発とリポジトリ内デモには次を使用します。
 
-カバレッジレポートを `pytest` から生成する場合でも `jest` から生成する場合でも、Mermaid フローチャートにはローカルの `mmdc` インストールが必要です:
+```bash
+python -m pip install -e ".[dev,pdf]"
+```
+
+インストール後に CLI と同梱リソースを確認します。
+
+```bash
+teaforge --version
+teaforge doctor --framework pytest --path demo/fastapi_crud/tests
+```
+
+## 外部ツール
+
+### Jest
+
+Jest の実行時証拠とカバレッジには `node` と、対象プロジェクトへ導入済みの Jest が必要です。TeaForge は最寄りの `node_modules/.bin/jest`（ワークスペース上位へ hoist されたものを含む）を発見し、対象プロジェクトのルートから正確なテストパスを指定して実行します。
+
+TeaForge は `npx` を呼ばず、Jest を暗黙にダウンロードしません。先に対象プロジェクトの lockfile に従って依存を導入してください。
+
+```bash
+npm ci
+teaforge doctor --framework jest --path tests/user.test.js --json
+```
+
+### Mermaid
+
+構文検証と SVG 描画には `mmdc` が必要です。
 
 ```bash
 npm install -g @mermaid-js/mermaid-cli
+teaforge doctor --framework pytest --require-mermaid
 ```
 
-## PDF 出力依存関係（WeasyPrint）
+Chromium の起動設定が必要な環境では、`TEAFORGE_MERMAID_PUPPETEER_CONFIG` に `mmdc` 用 Puppeteer JSON ファイルを指定できます。このリポジトリの `--no-sandbox` は隔離された CI runner だけで使用します。一般的な開発端末へその設定をコピーしないでください。
 
-TeaForge の HTML 生成は Python パッケージのみに依存します。PDF 出力はそれに加えて WeasyPrint のシステムライブラリが必要です。  
-`teaforge export` 実行時に `libgobject`、`Pango`、`Cairo`、または DLL / 共有ライブラリ不足が報告された場合は、利用しているプラットフォーム向けの必要パッケージをインストールしてください。
+### PDF
 
-### macOS
-
-WeasyPrint 公式ドキュメントによると、最も簡単な方法はまず Homebrew で WeasyPrint と依存関係をインストールすることです:
+PDF 出力は任意依存の `weasyprint` と Pango/Cairo のネイティブ依存を使用します。利用前に確認してください。
 
 ```bash
-brew install weasyprint
+teaforge doctor --framework pytest --require-pdf
 ```
 
-そのうえで、プロジェクトの仮想環境内で TeaForge を使う場合は、次の手順も実行してください:
+macOS では `brew install weasyprint` が簡単です。Windows では WeasyPrint/MSYS2 の手順に従い、必要に応じて `WEASYPRINT_DLL_DIRECTORIES` で Pango DLL の場所を指定してください。
+
+## クイックスタート
+
+### pytest PCL
 
 ```bash
-source .venv/bin/activate
-pip install -e ".[dev,pdf]"
+teaforge pcl generate \
+  --path demo/fastapi_crud/tests \
+  --output output/pcl.html
 ```
 
-共有ライブラリがまだ見つからない場合は、次を設定できます:
+TeaForge は証明できたテスト対象ごとにケースをまとめ、HTML/JSON の組を出力します。1 シートは 25 ケース列で、超過分は複数シートに分割されます。JSON には `schema_version` が含まれます。
 
-```bash
-export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib:$DYLD_FALLBACK_LIBRARY_PATH"
-```
-
-通常のプレフィックスは、Apple Silicon Mac では `/opt/homebrew`、Intel Mac では `/usr/local` です。
-
-### Windows
-
-TeaForge は Windows でも動作する可能性があります。PDF 出力には、事前に Pango とその依存関係をインストールする必要があります。  
-WeasyPrint 公式ドキュメントに基づく推奨手順は次のとおりです:
-
-1. Python をインストールします。
-2. [MSYS2](https://www.msys2.org/) をインストールします。
-3. MSYS2 シェルで次を実行します:
-
-```bash
-pacman -S mingw-w64-x86_64-pango
-```
-
-4. PowerShell または `cmd` に戻って、プロジェクトをインストールします:
-
-```powershell
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -e ".[dev,pdf]"
-```
-
-DLL がまだ不足する場合は、現在のターミナルで次を設定します:
-
-```powershell
-$env:WEASYPRINT_DLL_DIRECTORIES="C:\msys64\mingw64\bin"
-```
-
-`cmd.exe` での等価な設定は次のとおりです:
-
-```cmd
-set WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin
-```
-
-### 出力コマンド例
-
-```bash
-teaforge export --path output/test_items/demo-pcl-test-create-item-normal.html --output output/test_items/demo-pcl-test-create-item-normal.pdf
-```
-
-## CLI の使い方
-
-TeaForge の主要な CLI 利用者は、人間のターミナルユーザーではなくエージェントです。つまり、設計目標は「人間が最短で打てるコマンドは何か」ではなく、次の点にあります:
-
-- エージェントが `help` 出力からパラメータと制約を理解できるか
-- 失敗メッセージから明確な修正経路を取得できるか
-- PCL / カバレッジ / Mermaid のワークフローを自動的につなげられるか
-
-このため、TeaForge CLI は読みやすいヘルプ、明示的なエラーメッセージ、依存関係や入力不足時の実行可能な修正ヒントを提供することを重視しています。これらのフィードバックはエージェントが読み取り、修正したパラメータで再実行することを想定しています。
-
-TeaForge は現在、`--framework` でテストフレームワークを選択します:
-
-- `pytest`: デフォルト
-- `jest`: Node.js / TypeScript の Jest テスト向け
-
-PCL を生成する:
-
-```bash
-teaforge pcl generate --path demo/fastapi_crud/tests --output output/pcl.html
-```
-
-補足:
-
-- デフォルトでは、TeaForge はテスト対象関数ごとに 1 つの PCL ファイルを生成します。同じ関数を対象にする複数テストケースは同じ PCL に統合されます。
-- 生成された PCL では、`file` と `method` は実際のテスト対象ソースファイルと実装関数を優先します。デモでは `main.py` / `create_item` になります。
-- マトリクスは常に 25 個のテストケース列を確保します。
-- 1 つの関数に 25 件を超えるテストケースがある場合、TeaForge は自動的に複数のシートファイルへ分割します。
-- 入力パスに複数のテスト対象関数が含まれる場合、TeaForge はテスト対象ファイル名ごとにサブディレクトリを作成し、それぞれの HTML/JSON を出力します。
-
-Jest / TypeScript PCL を生成する:
+### 実行時証拠付き Jest PCL
 
 ```bash
 teaforge pcl generate \
   --framework jest \
-  --path tests/fixtures/test_sample_jest.test.ts \
+  --evidence-mode runtime \
+  --path demo/jest_runtime/tests/user.test.js \
   --output output/jest-pcl.html
 ```
 
-現在主にサポートしている Jest 構文:
+証拠モード:
 
-- `test(...)`
-- `it(...)`
-- `test.only(...)` / `it.only(...)`
-- `test.each([...])(...)`
-- 相対パス `import`
-- 直接 import された関数呼び出し
-- `expect(...).toBe(...)`
-- `expect(...).toEqual(...)`
-- `expect(...).toStrictEqual(...)`
-- `expect(...).toContain(...)`
-- `expect(() => fn(...)).toThrow(...)`
+- `static`: Jest を実行せず、設計時の期待値を静的解析
+- `runtime`: Jest 実行を必須とし、観測した matcher 証拠を記録
+- `auto`: 実行時証拠を試し、プロジェクトローカル runner または assertion hook が利用不能な場合だけ静的解析へフォールバック。タイムアウトや Jest 設定／実行エラーは静的レポートで隠さず失敗として扱います。
 
-現在の Jest 制限事項:
+Jest が実行されテストが失敗した場合も、TeaForge は失敗証拠を含むレポートを書き、終了コード `2` を返します。失敗を意図的に受け入れる場合だけ `--allow-test-failures` を使ってください。`--runtime-timeout` はワークフロー全体の上限で、期限切れ時はランナーのプロセスツリーを終了し、診断出力も上限付きで保持します。
 
-- 相対 `TypeScript` / `JavaScript` import が主なサポート対象です。
-- `test.each` は現在、配列リテラルの行データをサポートしています。
-- すべての Jest / ts-jest / Babel 構文バリエーションをまだ網羅していません。
-- 完全な Node.js デモプロジェクトはまだありません。現状の検証は主に `tests/fixtures/jest_sample` に依存しています。
+静的パーサーは一般的な `test`/`it`、配列リテラルの `test.each`、ESM 相対 import、CommonJS の分割代入／別名／名前空間 `require`、直接関数呼び出し、主要 matcher に対応します。複雑な変換構文、動的 import、計算で生成されるテストは実行時証拠が必要になる場合があります。
 
-PDF を出力する:
+### PCL の参照と PDF 出力
 
 ```bash
+teaforge get --path output/pcl.json --testcase TC-001
 teaforge export --path output/pcl.html --output output/pcl.pdf
 ```
 
-テストケースを参照する:
+### 図を用意する
 
-```bash
-teaforge get --path output/pcl.html --testcase TC-001
-```
-
-補足:
-
-- `generate` は各 HTML ファイルに対応する `.json` ファイルも同時に出力します。
-- `get` は JSON を優先して読み込みます。埋め込みデータを含む HTML を渡した場合も、そこから直接読み取れます。
-- エージェントは `teaforge help`、`teaforge help pcl generate`、`teaforge help coverage generate` の説明を読み、エラーフィードバックに応じてパラメータを調整できます。
-
-Mermaid を検証する:
-
-```bash
-teaforge mermaid validate --code "flowchart TD
-  A[Start] --> B[End]"
-```
-
-関数単位の Mermaid ファイルを生成する:
+フローチャート:
 
 ```bash
 teaforge mermaid generate \
   --source demo/fastapi_crud/app/main.py \
   --function create_item \
+  --diagram-type flowchart \
   --code "flowchart TD
-    A[Start] --> B[Create item]
-    B --> C[Return response]" \
+    A[Receive request] --> B{Valid?}
+    B -- No --> C[Return validation error]
+    B -- Yes --> D[Create item]
+    D --> E[Return item]" \
   --output-dir output/files
 ```
 
-カバレッジレポートを生成する:
+シーケンス図:
+
+```bash
+teaforge mermaid generate \
+  --source demo/fastapi_crud/app/main.py \
+  --function create_item \
+  --diagram-type sequence \
+  --code "sequenceDiagram
+    Client->>API: Create item
+    API->>DB: Insert item
+    DB-->>API: Stored row
+    API-->>Client: Created response" \
+  --output-dir output/files
+```
+
+`mermaid generate` は型を検証した `.mmd` ソースを保存します。未対応の図種は誤った型として保存せず、明示的に失敗します。
+
+### カバレッジレポート
+
+Python:
 
 ```bash
 teaforge coverage generate \
   --path demo/fastapi_crud/tests \
-  --output output/main_coverage_report.html \
+  --output output/main-coverage.html \
+  --min-c0 90 \
+  --min-c1 100 \
   --function create_item \
-  --function update_item \
+  --sequence create_item \
   --diagram-dir output/files
 ```
 
-Jest / TypeScript カバレッジレポートを生成する:
+対象プロジェクトが別の仮想環境を使う場合は、その Python を指定します。
+
+```bash
+teaforge doctor \
+  --framework pytest \
+  --path /project/tests \
+  --python-executable /project/.venv/bin/python
+
+teaforge coverage generate \
+  --path /project/tests \
+  --python-executable /project/.venv/bin/python \
+  --runtime-timeout 180 \
+  --output output/project-coverage.html
+```
+
+Jest:
 
 ```bash
 teaforge coverage generate \
   --framework jest \
-  --path tests/fixtures/test_sample_jest.test.ts \
-  --output output/jest_coverage_report.html \
-  --function createUser \
-  --diagram-dir output/files
+  --path demo/jest_runtime/tests/user.test.js \
+  --output output/jest-coverage.html \
+  --runtime-timeout 180
 ```
 
-補足:
+レポートは証明できた業務ソースファイル単位で生成されます。Jest テストを実ソースへ対応付けられない場合は即時に失敗します。`--function` はフローチャート、`--sequence` はシーケンス図を追加し、どちらも繰り返し指定できます。測定対象の文または分岐が存在しない指標は `N/A` と表示し、その指標の閾値判定から除外します。
 
-- カバレッジレポートはテスト対象ソースファイル単位で生成されます。サマリーページにはすべての関数が含まれますが、`--function` で指定した関数だけが専用フローチャートページを持ちます。
-- `_db_path` のような単純なヘルパー関数にはフローチャートは不要です。条件分岐やエラーパスを持つ実際の業務関数を優先してください。
-- 要求された業務関数については、対応する Mermaid の `.mmd` ファイルが事前に用意されている必要があります。存在しない場合、CLI は先に `teaforge mermaid generate` を呼ぶよう案内します。
-- Mermaid の内容には、`if/else`、バリデーション失敗、例外返却パス、主要な業務分岐を含めるべきです。意味のない「start -> call function -> end」のような図は生成しないでください。
-- `teaforge mermaid validate` と `teaforge mermaid generate` は、実際の構文検証のためにローカルの `mmdc` を使用します。未導入の場合、TeaForge はインストールヒントを直接出力します。
-- レポート生成時、TeaForge は Mermaid を SVG にレンダリングし、自己完結型の画像として HTML に埋め込みます。これにより、生の Mermaid SVG スタイルがページ CSS エラーと誤認される問題を避けます。
-- Mermaid から SVG への変換はローカルの `mmdc` に依存し、`npm install -g @mermaid-js/mermaid-cli` でインストールできます。
-- `jest` カバレッジは現在、Istanbul 形式の `coverage-final.json` を読み込み、テストファイルが実際の業務ソースファイルへ対応付けられていることを必要とします。TeaForge がソースを証明できない場合は即時に失敗します。
-- `jest` のソース関数解析は現在、トップレベル関数、アロー関数、クラスメソッドを対象にしています。
-- コマンドが失敗した場合、TeaForge は `mmdc` 不足、Mermaid ファイル不足、ソースファイル未解決、不正な framework パラメータなど、実行可能な修正ヒントを返すようにしています。これらのメッセージはエージェントが読み取り、次の呼び出しを修正することを想定しています。
+## CLI ヘルプと終了コード
+
+```bash
+teaforge help
+teaforge help pcl generate
+teaforge help coverage generate
+```
+
+- `0`: コマンドが完了し、必須結果も許容可能
+- `1`: 入力不正、能力不足、実行失敗、生成失敗
+- `2`: Jest は実行されレポートも生成されたが、1 件以上のテストが失敗
+- `3`: カバレッジレポートは生成されたが、`--min-c0` または `--min-c1` を未達
+
+出力は同じディレクトリの一時ファイルへ書き、原子的に置換します。これにより単一ファイル書き込み中断時に以前の成果物を壊しません。複数成果物はすべての検証・描画後に置換しますが、同じ出力パスへの並行書き込みは未対応です。
+
+## プロジェクト構成
+
+```text
+TeaForge/
+  src/teaforge/            # CLI とサービスモジュール
+  src/teaforge/templates/  # 同梱 PCL／カバレッジテンプレート
+  src/teaforge/jest/assets # 同梱実行時 listener
+  demo/fastapi_crud/       # 実行可能 pytest デモ
+  demo/jest_runtime/       # lockfile 付き Jest デモ
+  tests/                   # 単体・CLI 統合テスト
+  docs/adr/                # 長期的なアーキテクチャ判断
+  CHANGELOG.md             # リリース単位の変更履歴
+  skill/SKILL.md           # エージェント向け手順
+  .github/workflows/ci.yml # テスト、パッケージ、実 Jest 検証
+```
+
+共通のドメイン用語は [`CONTEXT.md`](CONTEXT.md)、実行／成果物の設計判断は [`docs/adr/`](docs/adr/) に記録しています。
+
+## 開発・リリース確認
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
+python -m ruff check src tests demo
+python -m coverage run -m pytest -q
+python -m coverage report
+python -m compileall -q src tests
+npm --prefix demo/jest_runtime ci
+npm --prefix demo/jest_runtime test
+python -m build
+python -m twine check dist/*
+```
+
+別のコンピュータへリポジトリをコピーした後は `.venv` を作り直してください。仮想環境にはマシン固有の Python パスが含まれるため、ソースと一緒に移動する対象ではありません。
+
+CI は Linux 上の Python 3.11／3.14 と Windows 上の Python 3.12 を検証し、Ruff と分岐カバレッジ 80% の基準を適用します。さらに wheel/sdist を構築し、隔離した wheel インストールから実 pytest カバレッジを実行し、Node 20／22 で lockfile 付き Jest デモをプロジェクト外から実行します。
+
+## 現在の境界
+
+- JavaScript/TypeScript のソース発見は、TeaForge に同梱された Tree-sitter の JavaScript／TypeScript／TSX 文法で構造的に解析し、コメントや文字列中の import／test 風テキストを無視します。ただし TypeScript の型検査や動的・大幅に変換されたテストの評価は行わないため、その場合は実行時証拠を使い、解決されたソース識別子を確認してください。
+- ディレクトリ探索では `node_modules`、`.venv`、`dist`、`build` などの生成済み依存・環境ツリーを除外します。そこを意図的に解析する場合は正確なファイルパスを渡してください。
+- 実行時証拠には、機密キーと一般的な認証情報パターンの既定マスキング、値の切り詰め、レコード／ファイル上限を適用します。より厳しい機密要件を持つプロジェクトでは、レポートを保管する前にこの既定方針で十分か確認してください。
+- C0/C1 の成果物には証拠プロバイダーと指標定義を保持します。任意の `--min-c0`／`--min-c1` ゲートは、生成された全ソースファイルレポートへ適用されます。
+- Mermaid と PDF は明示的な任意能力で、`teaforge doctor` が個別に確認します。
+
+これらの境界を明示し、自動処理がもっともらしい誤レポートを黙って生成しないようにしています。
